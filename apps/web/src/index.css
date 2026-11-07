@@ -2012,6 +2012,11 @@ code {
   list-style-type: lower-roman;
 }
 
+/* Typed numbers must read as typed, so nested lists stay decimal like the composer. */
+.chat-markdown[data-typed-list-numbers] ol ol {
+  list-style-type: decimal;
+}
+
 .chat-markdown li + li {
   margin-top: 0.25rem;
 }

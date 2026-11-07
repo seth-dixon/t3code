@@ -1011,6 +1011,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   skills={ctx.skills}
                   markdownCwd={ctx.markdownCwd}
                   collapsible={!folded}
+                  keepTypedListNumbers={
+                    userMessage.attribution === null || userMessage.attribution === "guest"
+                  }
                 />
               </div>
             )}
@@ -1114,6 +1117,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   skills: ReadonlyArray<ServerProviderSkill>;
   markdownCwd: string | undefined;
   collapsible?: boolean;
+  keepTypedListNumbers: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const revealForFind = () => setExpanded(true);
@@ -1150,6 +1154,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             renderContextReference={props.renderContextReference}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
+            keepTypedListNumbers={props.keepTypedListNumbers}
           />
         </div>
       ) : null}
@@ -1179,6 +1184,8 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<ServerProviderSkill>;
   markdownCwd: string | undefined;
+  /** Only for text a person typed; agent-written prompts keep CommonMark numbering. */
+  keepTypedListNumbers?: boolean;
 }) {
   const ctx = use(TimelineRowCtx);
   if (props.text.length === 0) {
@@ -1193,6 +1200,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       className="text-foreground"
       lineBreaks
       parseRawHtml={false}
+      keepTypedListNumbers={props.keepTypedListNumbers ?? false}
       renderContextReference={props.renderContextReference}
       headingLevelOffset={MESSAGE_HEADING_LEVEL}
     />

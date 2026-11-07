@@ -8,6 +8,7 @@ import {
   CHAT_MARKDOWN_REHYPE_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
+  remarkKeepOrderedListNumbers,
 } from "./markdownPipeline.ts";
 
 it.each([
@@ -288,5 +289,47 @@ it("moves a <picture>'s color-scheme sources onto its <img>, which the renderer 
     { src: "docs/light.webp", alt: "Studio", dataDarkSrc: "docs/dark.webp" },
     { src: "docs/dark.webp" },
     { dataLocalSrc: String.raw`C:\shots\light.png`, dataDarkSrc: "file:///C:/shots/dark.png" },
+  ]);
+});
+
+it("keeps the number typed on each ordered list item", () => {
+  const processor = unified()
+    .use(remarkParse)
+    .use([...CHAT_MARKDOWN_REMARK_PLUGINS, remarkKeepOrderedListNumbers])
+    .use(remarkRehype);
+  const values = (markdown: string) => {
+    const found: Array<unknown> = [];
+    const visit = (node: {
+      tagName?: string;
+      properties?: { value?: unknown };
+      children?: unknown[];
+    }) => {
+      if (node.tagName === "li") found.push(node.properties?.value);
+      for (const child of node.children ?? []) visit(child as typeof node);
+    };
+    visit(processor.runSync(processor.parse(markdown), markdown));
+    return found;
+  };
+  expect(values("4. a\n8. b\n9. c\n7. d\n\n> 2) e\n> 2) f\n\n- g")).toEqual([
+    undefined,
+    "8",
+    undefined,
+    "7",
+    undefined,
+    "2",
+    undefined,
+  ]);
+  expect(values("-       text\n\n      9. a\n      10. b\n      11. c")).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  // List-indentation recovery reparses this list from rewritten text.
+  expect(values("-       text\n\n      9. a\n      9. b\n      7. c")).toEqual([
+    undefined,
+    undefined,
+    "9",
+    "7",
   ]);
 });

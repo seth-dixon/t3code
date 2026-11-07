@@ -197,6 +197,30 @@ describe("serializeRenderedMarkdownFragment", () => {
     expect(serializeRenderedMarkdownFragment(asNode(container))).toBe("first line\nsecond line");
   });
 
+  it("copies the number shown on each ordered item", () => {
+    const item = (text: string, attributes: Record<string, string> = {}) =>
+      new FakeElement("LI", [], attributes).append(new FakeText(text));
+    const container = new FakeElement("DIV").append(
+      new FakeElement("OL", [], { start: "4" }).append(
+        item("a"),
+        item("b", { value: "8" }),
+        item("c"),
+        item("d", { value: "7" }),
+      ),
+    );
+
+    expect(serializeRenderedMarkdownFragment(asNode(container))).toBe("4. a\n8. b\n9. c\n7. d");
+
+    const zeros = new FakeElement("DIV").append(
+      new FakeElement("OL", [], { start: "0" }).append(
+        item("a"),
+        item("b", { value: "0" }),
+        item("c", { value: "-2" }),
+      ),
+    );
+    expect(serializeRenderedMarkdownFragment(asNode(zeros))).toBe("0. a\n0. b\n-2. c");
+  });
+
   it("keeps fences when a bare list item sits alongside the code block", () => {
     const container = new FakeElement("DIV").append(
       new FakeElement("UL").append(new FakeElement("LI")),

@@ -143,11 +143,51 @@ function serializeListItem(
   ].join("\n");
 }
 
+/** Each item with its number as the browser draws it: an item's value restarts the count. */
+function numberedListItems(list: Element): Array<[item: Element, number: number]> {
+  const parsedStart = Number.parseInt(list.getAttribute("start") ?? "1", 10);
+  let number = (Number.isNaN(parsedStart) ? 1 : parsedStart) - 1;
+  return [...list.children]
+    .filter((child) => child.tagName === "LI")
+    .map((item) => {
+      const value = Number.parseInt(item.getAttribute("value") ?? "", 10);
+      number = Number.isNaN(value) ? number + 1 : value;
+      return [item, number];
+    });
+}
+
 function serializeList(list: Element, ordered: boolean, inTableCell: boolean): string {
-  const start = Number.parseInt(list.getAttribute("start") ?? "1", 10) || 1;
-  const items = [...list.children].filter((child) => child.tagName === "LI");
+  const items = numberedListItems(list);
   if (items.length === 0) return "";
-  return `${items.map((item, index) => serializeListItem(item, ordered, start + index, inTableCell)).join("\n")}\n\n`;
+  const lines = items.map(([item, number]) =>
+    serializeListItem(item, ordered, number, inTableCell),
+  );
+  return `${lines.join("\n")}\n\n`;
+}
+
+// A range starting partway into an ordered list clones only the selected items under the
+// list's original start, so the first item would copy as the start number.
+function keepPartialListNumbers(range: Range, container: Element): void {
+  const ancestor = range.commonAncestorContainer;
+  const numbers: number[] = [];
+  // An element start points between its children; the selection begins at the next child.
+  const start = range.startContainer.childNodes[range.startOffset] ?? range.startContainer;
+  for (let node: Node | null = start; node && node !== ancestor;) {
+    const list: Element | null = node.parentElement;
+    if (node instanceof Element && node.tagName === "LI" && list?.tagName === "OL") {
+      if (list === ancestor) break;
+      const entry = numberedListItems(list).find(([item]) => item === node);
+      if (entry) numbers.unshift(entry[1]);
+    }
+    node = node.parentNode;
+  }
+  let scope: Element = container;
+  for (const number of numbers) {
+    const item = scope.querySelector(":scope ol > li");
+    if (!item) break;
+    item.setAttribute("value", String(number));
+    scope = item;
+  }
 }
 
 function serializeBlockquote(quote: Element, inTableCell: boolean): string {
@@ -425,6 +465,7 @@ export function chatMarkdownClipboardPayload(
     if (range.collapsed) continue;
     const container = document.createElement("div");
     container.appendChild(range.cloneContents());
+    keepPartialListNumbers(range, container);
     const ancestor = range.commonAncestorContainer;
     const ancestorElement =
       ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as Element) : ancestor.parentElement;

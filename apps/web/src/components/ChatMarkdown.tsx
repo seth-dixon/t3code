@@ -18,6 +18,7 @@ import {
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
   CHAT_MARKDOWN_REHYPE_PLUGINS,
+  remarkKeepOrderedListNumbers,
 } from "@t3tools/shared/markdownPipeline";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -236,6 +237,8 @@ interface ChatMarkdownProps {
   skills?: ReadonlyArray<ServerProviderSkill>;
   className?: string;
   lineBreaks?: boolean;
+  /** Show each ordered item's typed number instead of CommonMark's sequential count. */
+  keepTypedListNumbers?: boolean;
   parseRawHtml?: boolean;
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   onRunShellCommand?: ((command: string) => void) | undefined;
@@ -325,13 +328,18 @@ function CodexArtifactTemplateCard(props: {
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 
 function orderedListGutterStyle(
-  itemCount: number,
   start: unknown,
+  itemValues: ReadonlyArray<unknown>,
 ): { "--list-gutter": string } | undefined {
   const parsedStart = Number.parseInt(String(start ?? 1), 10);
-  const firstNumber = Number.isNaN(parsedStart) ? 1 : parsedStart;
-  const lastNumber = firstNumber + Math.max(itemCount - 1, 0);
-  const markerWidth = Math.max(String(firstNumber).length, String(lastNumber).length);
+  let number = (Number.isNaN(parsedStart) ? 1 : parsedStart) - 1;
+  let markerWidth = 1;
+  // Numbered as the browser does: an item's value resets the count.
+  for (const itemValue of itemValues) {
+    const value = Number.parseInt(String(itemValue ?? ""), 10);
+    number = Number.isNaN(value) ? number + 1 : value;
+    markerWidth = Math.max(markerWidth, String(number).length);
+  }
   if (markerWidth <= 1) return undefined;
   return { "--list-gutter": `${markerWidth + 2}ch` };
 }
@@ -1003,10 +1011,12 @@ const CHAT_MARKDOWN_COMPONENTS = {
     );
   },
   ol: function MarkdownOrderedList({ node, start, style, ...props }) {
-    const itemCount =
-      node?.children?.filter((child) => child.type === "element" && child.tagName === "li")
-        .length ?? 0;
-    const gutterStyle = orderedListGutterStyle(itemCount, start);
+    const items =
+      node?.children?.filter((child) => child.type === "element" && child.tagName === "li") ?? [];
+    const gutterStyle = orderedListGutterStyle(
+      start,
+      items.map((item) => (item.type === "element" ? item.properties.value : undefined)),
+    );
     return (
       <ol {...props} start={start} style={gutterStyle ? { ...style, ...gutterStyle } : style} />
     );
@@ -1657,6 +1667,13 @@ const CHAT_MARKDOWN_REMARK_PLUGIN_SETS = {
   mathBreaks: [REMARK_MATH, ...CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS],
 } satisfies Record<string, PluggableList>;
 
+const TYPED_NUMBER_REMARK_PLUGIN_SETS = Object.fromEntries(
+  Object.entries(CHAT_MARKDOWN_REMARK_PLUGIN_SETS).map(([mode, plugins]) => [
+    mode,
+    [...plugins, remarkKeepOrderedListNumbers],
+  ]),
+) as Record<keyof typeof CHAT_MARKDOWN_REMARK_PLUGIN_SETS, PluggableList>;
+
 const combinedPlugins = new WeakMap<PluggableList, WeakMap<PluggableList, PluggableList>>();
 
 // One combined list per pair, so a stable extra list shares a renderer and its parse cache.
@@ -1724,6 +1741,7 @@ function ChatMarkdown({
   className,
   inline = false,
   lineBreaks = false,
+  keepTypedListNumbers = false,
   parseRawHtml = true,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   ...props
@@ -1747,16 +1765,17 @@ function ChatMarkdown({
   const bindMarkdownRef = (node: HTMLElement | null) => {
     markdownRef.current = node;
   };
-  const sharedRemarkPlugins =
-    CHAT_MARKDOWN_REMARK_PLUGIN_SETS[
-      componentState.mathEnabled
-        ? lineBreaks
-          ? "mathBreaks"
-          : "math"
-        : lineBreaks
-          ? "breaks"
-          : "plain"
-    ];
+  const sharedRemarkPlugins = (
+    keepTypedListNumbers ? TYPED_NUMBER_REMARK_PLUGIN_SETS : CHAT_MARKDOWN_REMARK_PLUGIN_SETS
+  )[
+    componentState.mathEnabled
+      ? lineBreaks
+        ? "mathBreaks"
+        : "math"
+      : lineBreaks
+        ? "breaks"
+        : "plain"
+  ];
   // The incremental parser keeps per-instance state, so its output is not shared.
   const uncachedPlugins = incrementalParsing;
   const remarkPlugins = incrementalParsing
@@ -1774,6 +1793,7 @@ function ChatMarkdown({
         className,
       )}
       data-streaming={componentState.isStreaming ? "" : undefined}
+      data-typed-list-numbers={keepTypedListNumbers ? "" : undefined}
       onCopy={handleCopy}
     >
       <ChatMarkdownRendererContext value={componentState}>

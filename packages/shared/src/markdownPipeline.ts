@@ -370,6 +370,48 @@ type MarkdownAstNode = {
   children?: MarkdownAstNode[];
 };
 
+// CommonMark numbers items after the first sequentially. Prompts keep the numbers the user
+// typed; agent replies keep auto-numbering, since agents often write every item as `1.`.
+export function remarkKeepOrderedListNumbers(this: Processor): Transformer<Root> {
+  // Read at parse time: list-indentation recovery reparses some lists from rewritten text,
+  // so item offsets can't be trusted to point into the file.
+  (this.data().fromMarkdownExtensions ??= []).push({
+    exit: { listItemValue: recordTypedListItemNumber },
+  });
+  return (tree) => {
+    const visit = (node: Root | RootContent) => {
+      if (!("children" in node)) return;
+      if (node.type === "list" && node.ordered) {
+        let expected = node.start ?? 1;
+        for (const item of node.children) {
+          const typed = (item.data as { typedNumber?: unknown } | undefined)?.typedNumber;
+          const number = typeof typed === "number" ? typed : expected;
+          if (number !== expected) {
+            item.data = {
+              ...item.data,
+              hProperties: { ...item.data?.hProperties, value: String(number) },
+            };
+          }
+          expected = number + 1;
+        }
+      }
+      for (const child of node.children) visit(child);
+    };
+    visit(tree);
+  };
+}
+
+interface ListItemCompileContext {
+  readonly stack: ReadonlyArray<{ readonly type: string; data?: object | undefined }>;
+  sliceSerialize(token: unknown): string;
+}
+
+function recordTypedListItemNumber(this: ListItemCompileContext, token: unknown) {
+  const item = this.stack.at(-1);
+  if (item?.type !== "listItem") return;
+  item.data = { ...item.data, typedNumber: Number.parseInt(this.sliceSerialize(token), 10) };
+}
+
 function remarkKeepAutolinkSuffixes(): Transformer<Root> {
   return (tree, file) => {
     const source = String(file);
