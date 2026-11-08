@@ -34,17 +34,22 @@ function themedFaviconUrlForPage(
   }
 }
 
-/** Accepts image URLs supplied by a trusted provider event. */
-function explicitFaviconUrl(rawUrl: string | null | undefined): string | null {
+/** Accepts image URLs supplied by a provider event; `publicOnly` drops loopback and private hosts. */
+function explicitFaviconUrl(rawUrl: string | null | undefined, publicOnly = false): string | null {
   if (!rawUrl || rawUrl.length > 4096) return null;
   try {
     const url = new URL(rawUrl);
-    return url.protocol === "http:" || url.protocol === "https:" || url.protocol === "data:"
-      ? url.href
-      : null;
+    if (url.protocol === "data:") return url.href;
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return !publicOnly || isPublicFaviconHost(url.hostname) ? url.href : null;
   } catch {
     return null;
   }
+}
+
+/** An icon URL the client may load for an untrusted environment: inline data or a public host. */
+export function publicImageUrl(rawUrl: string | null | undefined): string | null {
+  return explicitFaviconUrl(rawUrl, true);
 }
 
 export function toolActivityFaviconUrl(
@@ -55,19 +60,24 @@ export function toolActivityFaviconUrl(
   },
   appearance: "light" | "dark",
   size = 32,
+  publicOnly = false,
 ): string | null {
+  const pageFavicon = () => {
+    const url = faviconUrlForPage(icon.pageUrl, size);
+    return publicOnly ? publicImageUrl(url) : url;
+  };
   if (appearance === "dark") {
     return (
-      explicitFaviconUrl(icon.faviconUrlDark) ??
+      explicitFaviconUrl(icon.faviconUrlDark, publicOnly) ??
       themedFaviconUrlForPage(icon.pageUrl, "dark") ??
-      explicitFaviconUrl(icon.faviconUrl) ??
-      faviconUrlForPage(icon.pageUrl, size)
+      explicitFaviconUrl(icon.faviconUrl, publicOnly) ??
+      pageFavicon()
     );
   }
   return (
-    explicitFaviconUrl(icon.faviconUrl) ??
+    explicitFaviconUrl(icon.faviconUrl, publicOnly) ??
     themedFaviconUrlForPage(icon.pageUrl, "light") ??
-    faviconUrlForPage(icon.pageUrl, size)
+    pageFavicon()
   );
 }
 

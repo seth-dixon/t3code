@@ -1099,7 +1099,8 @@ export function PreviewView({
           !environmentTrusted ? (
             <div className="flex h-full items-center justify-center p-8 text-center">
               <p className="max-w-sm text-sm text-muted-foreground">
-                {environmentLabel} is marked untrusted, so its pages don&rsquo;t open in this app.
+                {environmentLabel} isn&rsquo;t trusted on this device, so its pages don&rsquo;t open
+                in this app.
               </p>
             </div>
           ) : previewBridge ? (

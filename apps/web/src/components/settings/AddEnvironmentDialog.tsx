@@ -163,6 +163,7 @@ export function AddEnvironmentDialog({
       setSavedBackendSshHost("");
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
+      setUntrusted(false);
     }
     onOpenChange(nextOpen);
   };
