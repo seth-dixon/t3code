@@ -11,6 +11,7 @@ import {
   removeCatalogValue,
   removeConnectionFromCatalog,
   setConnectionEnabledInCatalog,
+  setConnectionTrustedInCatalog,
   setRoutesInCatalog,
   replaceCatalogValue,
   Persistence,
@@ -104,10 +105,12 @@ function persistenceError(
   operation:
     | "list-targets"
     | "list-disabled-targets"
+    | "list-untrusted-targets"
     | "register-connection"
     | "set-connection-routes"
     | "remove-connection"
     | "set-connection-enabled"
+    | "set-connection-trusted"
     | "load-shell"
     | "save-shell"
     | "load-thread"
@@ -738,6 +741,10 @@ export const layer = Layer.effectContext(
         Effect.map((document) => document.disabledEnvironmentIds),
         Effect.mapError((cause) => persistenceError("list-disabled-targets", cause)),
       ),
+      listUntrusted: catalog.read.pipe(
+        Effect.map((document) => document.untrustedEnvironmentIds),
+        Effect.mapError((cause) => persistenceError("list-untrusted-targets", cause)),
+      ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
@@ -764,6 +771,13 @@ export const layer = Layer.effectContext(
           return catalog
             .update((document) => setConnectionEnabledInCatalog(document, environmentId, enabled))
             .pipe(Effect.mapError((cause) => persistenceError("set-connection-enabled", cause)));
+        },
+      ),
+      setTrusted: Effect.fn("Persistence.ConnectionRegistrationStore.setTrusted")(
+        function (environmentId, trusted) {
+          return catalog
+            .update((document) => setConnectionTrustedInCatalog(document, environmentId, trusted))
+            .pipe(Effect.mapError((cause) => persistenceError("set-connection-trusted", cause)));
         },
       ),
     });

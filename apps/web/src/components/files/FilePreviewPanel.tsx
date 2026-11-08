@@ -129,6 +129,8 @@ import {
 import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
 import { changeFileSaveSession, useFileSaveSession } from "./fileSaveSessions";
 import { revisionedQuery } from "~/state/revisionedQuery";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
+import { UntrustedContentNotice } from "../chat/UntrustedContentNotice";
 import {
   getOptimisticProjectFileQueryData,
   getProjectFileContents,
@@ -242,6 +244,28 @@ export function WorkspaceBrowserPreview(props: {
   readonly workspaceMutationId: string | null;
 }) {
   const pdf = isPdfPreviewFile(props.absolutePath);
+  const trusted = useEnvironmentTrusted(props.environmentId);
+  if (!pdf && !trusted) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <UntrustedContentNotice environmentId={props.environmentId} title={props.title} />
+      </div>
+    );
+  }
+  return <TrustedWorkspaceBrowserPreview {...props} pdf={pdf} />;
+}
+
+function TrustedWorkspaceBrowserPreview(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
+  readonly title: string;
+  readonly workspaceMutationId: string | null;
+  readonly pdf: boolean;
+}) {
+  const { pdf } = props;
   const resource = workspaceAssetResource({
     kind: pdf ? "media-file" : "workspace-file",
     threadRef: props.threadRef,

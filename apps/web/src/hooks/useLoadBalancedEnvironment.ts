@@ -5,6 +5,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { useContext } from "react";
 
+import { environmentCatalog } from "../connection/catalog";
+import { isEnvironmentTrustedIn } from "../connection/environmentTrust";
 import { serverEnvironment } from "../state/server";
 
 // Mirrors the freshness window in chooseLoadBalancedEnvironment.
@@ -42,10 +44,16 @@ const hostResourcesAtom = Atom.family((environmentIdsKey: string) =>
 
 /** Only mounted for unresolved automatic drafts, so idle clients do not poll hosts. */
 export function useLoadBalancedEnvironment(
-  environmentIds: readonly EnvironmentId[],
+  candidateEnvironmentIds: readonly EnvironmentId[],
   weights: Readonly<Record<string, number>>,
 ) {
   const registry = useContext(RegistryContext);
+  const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
+  const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  // An untrusted environment never receives work this client did not send it on purpose.
+  const environmentIds = candidateEnvironmentIds.filter((environmentId) =>
+    isEnvironmentTrustedIn(trust, catalog, environmentId),
+  );
   const refresh = (ids: readonly EnvironmentId[]) => {
     for (const environmentId of ids) {
       registry.refresh(serverEnvironment.hostResources({ environmentId, input: {} }));

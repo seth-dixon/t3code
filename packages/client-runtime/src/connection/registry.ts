@@ -98,15 +98,22 @@ export class EnvironmentRegistry extends Context.Service<
       ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>
     >;
     readonly networkStatus: SubscriptionRef.SubscriptionRef<NetworkStatus>;
+    /**
+     * Saved environments this client must not let act on its own machine: no desktop-hosted
+     * previews or open-in-editor, and no pull request routing. Keyed by environment id, so every
+     * route of the environment, learned ones included, stays covered.
+     */
+    readonly untrustedEnvironmentIds: SubscriptionRef.SubscriptionRef<ReadonlySet<EnvironmentId>>;
     readonly start: Effect.Effect<void>;
     /**
      * Succeeds with `false` and changes nothing when the environment is
      * platform-managed, since the host owns that entry. With `knownAddressOnly`, it fails like
-     * `assertKnownAddress`, checked under the environment's lease.
+     * `assertKnownAddress`, checked under the environment's lease. With `untrusted`, the
+     * environment is marked untrusted before it first connects; an existing mark is never cleared.
      */
     readonly register: (
       registration: ConnectionRegistration,
-      options?: { readonly knownAddressOnly?: boolean },
+      options?: { readonly knownAddressOnly?: boolean; readonly untrusted?: boolean },
     ) => Effect.Effect<boolean, Persistence.ConnectionPersistenceError | ConnectionBlockedError>;
     /**
      * Fails when the route would add a new address to a saved user environment. Pairing that does
@@ -171,6 +178,16 @@ export class EnvironmentRegistry extends Context.Service<
       environmentId: EnvironmentId,
       error: ConnectionBlockedError | null,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
+    readonly setTrusted: (
+      environmentId: EnvironmentId,
+      trusted: boolean,
+    ) => Effect.Effect<
+      void,
+      | EnvironmentNotRegisteredError
+      | PlatformEnvironmentRemovalError
+      | Persistence.ConnectionPersistenceError
+      | ConnectionAttemptError
+    >;
     readonly state: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<SupervisorConnectionState, EnvironmentNotRegisteredError>;
@@ -222,6 +239,9 @@ export const make = Effect.gen(function* () {
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
+  const untrustedEnvironmentIds = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(
+    new Set(yield* storage.listUntrusted),
+  );
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
     target: ConnectionTarget,
   ) {
@@ -558,9 +578,19 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  const markUntrustedLocked = Effect.fn("EnvironmentRegistry.markUntrustedLocked")(function* (
+    environmentId: EnvironmentId,
+  ) {
+    yield* registrations.setTrusted(environmentId, false);
+    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) =>
+      current.has(environmentId) ? current : new Set(current).add(environmentId),
+    );
+    yield* pullRequestRoutingPermissions.forget(environmentId);
+  });
+
   const register = Effect.fn("EnvironmentRegistry.register")(function* (
     registration: ConnectionRegistration,
-    options?: { readonly knownAddressOnly?: boolean },
+    options?: { readonly knownAddressOnly?: boolean; readonly untrusted?: boolean },
   ) {
     const registered = connectionRegistrationCatalogEntry(registration);
     const environmentId = registered.target.environmentId;
@@ -594,6 +624,17 @@ export const make = Effect.gen(function* () {
         yield* Ref.update(persistedEnvironmentIds, (current) =>
           new Set(current).add(environmentId),
         );
+        if (options?.untrusted === true) {
+          yield* markUntrustedLocked(environmentId).pipe(
+            Effect.mapError(
+              (error) =>
+                new Persistence.ConnectionPersistenceError({
+                  operation: "set-connection-trusted",
+                  message: error.message,
+                }),
+            ),
+          );
+        }
         yield* installEntryLocked(entry);
         return true;
       }),
@@ -873,6 +914,12 @@ export const make = Effect.gen(function* () {
       next.delete(environmentId);
       return next;
     });
+    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
+      if (!current.has(environmentId)) return current;
+      const next = new Set(current);
+      next.delete(environmentId);
+      return next;
+    });
     yield* Effect.all(
       [
         cache.clear(environmentId).pipe(
@@ -1047,6 +1094,33 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const setTrusted = Effect.fn("EnvironmentRegistry.setTrusted")(function* (
+    environmentId: EnvironmentId,
+    trusted: boolean,
+  ) {
+    yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        // This client's own backends are the trust anchor; they cannot be marked untrusted.
+        if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) {
+          return yield* new PlatformEnvironmentRemovalError({ environmentId });
+        }
+        yield* getEntry(environmentId);
+        if (!trusted) {
+          yield* markUntrustedLocked(environmentId);
+          return;
+        }
+        if (!(yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(environmentId)) return;
+        yield* registrations.setTrusted(environmentId, true);
+        yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
+          const next = new Set(current);
+          next.delete(environmentId);
+          return next;
+        });
+      }),
+    );
+  });
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
       Effect.flatMap((supervisor) => supervisor.retryNow),
@@ -1186,6 +1260,7 @@ export const make = Effect.gen(function* () {
   return EnvironmentRegistry.of({
     entries,
     networkStatus,
+    untrustedEnvironmentIds,
     start,
     register,
     assertKnownAddress,
@@ -1197,6 +1272,7 @@ export const make = Effect.gen(function* () {
     retryNow,
     setEnabled,
     setCompatibility,
+    setTrusted,
     state,
     stateChanges,
     run,

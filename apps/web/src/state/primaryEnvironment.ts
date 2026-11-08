@@ -13,6 +13,7 @@ export const primaryEnvironmentIdAtom = Atom.make((get) => {
   return null;
 }).pipe(Atom.withLabel("web-primary-environment-id"));
 
+/** The environment id in the desktop app's own T3 home, read from disk, never from a server. */
 export const hostEnvironmentIdAtom = Atom.make<string | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-host-environment-id"),

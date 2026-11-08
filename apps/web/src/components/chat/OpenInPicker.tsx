@@ -289,7 +289,9 @@ export const OpenInPicker = memo(function OpenInPicker({
 
   const unavailableReason =
     remote.mode === "remote-unavailable"
-      ? `No SSH route to ${environmentLabel}`
+      ? remote.untrusted
+        ? `${environmentLabel} is marked untrusted`
+        : `No SSH route to ${environmentLabel}`
       : remote.mode === "remote-links" && options.length === 0
         ? `Open from a computer to edit on ${environmentLabel}`
         : null;

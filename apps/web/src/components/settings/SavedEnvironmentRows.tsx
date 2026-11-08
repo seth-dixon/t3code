@@ -4,7 +4,12 @@ import {
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
   RouteIcon,
+  ShieldIcon,
 } from "lucide-react";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useEffectEvent, useState } from "react";
 import {
@@ -192,6 +197,24 @@ export function SavedBackendListRow({
     setLastRelayHttpBaseUrl(discoveredRelayHttpBaseUrl);
   }
   const retryNow = useAtomCommand(environmentCatalog.retryNow);
+  const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
+  const untrusted = trust.untrusted.has(environmentId);
+  const setTrusted = useAtomCommand(environmentCatalog.setTrusted, {
+    reportFailure: false,
+  });
+  const toggleTrusted = async () => {
+    const result = await setTrusted({ environmentId, trusted: untrusted });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: untrusted ? "Could not mark as trusted" : "Could not mark as untrusted",
+          ...(error instanceof Error ? { description: error.message } : {}),
+        }),
+      );
+    }
+  };
   const {
     diagnosis: currentDiagnosis,
     state: connectionState,
@@ -214,6 +237,7 @@ export function SavedBackendListRow({
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
     diagnosis ? null : resumingServerUpdate ? "Restarting" : status.text,
+    untrusted ? "Untrusted" : null,
     enabled && versionMismatch ? serverVersion : null,
   ]
     .filter((value): value is string => value !== null)
@@ -417,6 +441,10 @@ export function SavedBackendListRow({
           <MenuItem onClick={() => setRoutesOpen((open) => !open)}>
             <RouteIcon />
             {routesOpen ? "Hide routes" : "Routes"}
+          </MenuItem>
+          <MenuItem disabled={!trust.isReady} onClick={() => void toggleTrusted()}>
+            <ShieldIcon />
+            {untrusted ? "Mark as trusted" : "Mark as untrusted"}
           </MenuItem>
           {mcpUrl ? (
             <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>

@@ -6,7 +6,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
-import { AVAILABLE_CONNECTION_STATE } from "../connection/model.ts";
+import { AVAILABLE_CONNECTION_STATE, ConnectionBlockedError } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import {
   PullRequestRoutingPermissions,
@@ -34,6 +34,17 @@ export function* enabledEnvironmentIds(
     }
   }
 }
+
+/** `isReady` stays false until the saved marks load; callers treat that as untrusted. */
+export interface EnvironmentTrustState {
+  readonly isReady: boolean;
+  readonly untrusted: ReadonlySet<EnvironmentIdType>;
+}
+
+const EMPTY_ENVIRONMENT_TRUST_STATE: EnvironmentTrustState = Object.freeze({
+  isReady: false,
+  untrusted: new Set<EnvironmentIdType>(),
+});
 
 const EMPTY_ENVIRONMENT_CATALOG_STATE: EnvironmentCatalogState = Object.freeze({
   isReady: false,
@@ -88,9 +99,42 @@ export function createEnvironmentCatalogAtoms<R, E>(
         return yield* new EnvironmentRegistry.EnvironmentNotRegisteredError({
           environmentId: input.environmentId,
         });
+      if (
+        input.permission !== "off" &&
+        (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(input.environmentId)
+      )
+        return yield* new ConnectionBlockedError({
+          reason: "permission",
+          detail: "Pull request routing stays off for an untrusted environment.",
+        });
       const permissions = yield* PullRequestRoutingPermissions;
       yield* permissions.set(entry, input.permission);
     }),
+  });
+
+  const untrustedEnvironmentIdsAtom = runtime.atom(
+    Stream.unwrap(
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.map((registry) =>
+          SubscriptionRef.changes(registry.untrustedEnvironmentIds).pipe(
+            Stream.map((ids): EnvironmentTrustState => ({ isReady: true, untrusted: ids })),
+          ),
+        ),
+      ),
+    ),
+    { initialValue: EMPTY_ENVIRONMENT_TRUST_STATE },
+  );
+  const untrustedEnvironmentIdsValueAtom = Atom.make((get) =>
+    AsyncResult.getOrElse(get(untrustedEnvironmentIdsAtom), () => EMPTY_ENVIRONMENT_TRUST_STATE),
+  ).pipe(Atom.withLabel("environment-untrusted-ids-value"));
+  const setTrusted = createRuntimeCommand(runtime, {
+    label: "environment-catalog:set-trusted",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (input: { readonly environmentId: EnvironmentIdType; readonly trusted: boolean }) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.setTrusted(input.environmentId, input.trusted)),
+      ),
   });
 
   const networkStatusAtom = runtime.atom(
@@ -197,6 +241,8 @@ export function createEnvironmentCatalogAtoms<R, E>(
     catalogValueAtom,
     pullRequestRoutingPermissionsValueAtom,
     setPullRequestRoutingPermission,
+    untrustedEnvironmentIdsValueAtom,
+    setTrusted,
     networkStatusAtom,
     networkStatusValueAtom,
     stateAtom,

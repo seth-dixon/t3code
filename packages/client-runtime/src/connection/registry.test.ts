@@ -167,6 +167,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       target: ConnectionTarget,
     ) => Effect.Effect<ConnectionBlockedError | undefined>;
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
+    readonly initialUntrusted?: ReadonlyArray<EnvironmentId>;
     readonly directEndpoints?: ServerConfig["directEndpoints"];
   },
 ) {
@@ -205,9 +206,13 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const storedDisabled = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(options?.initialDisabled ?? []),
   );
+  const storedUntrusted = yield* Ref.make<ReadonlySet<EnvironmentId>>(
+    new Set(options?.initialUntrusted ?? []),
+  );
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets),
     listDisabled: Ref.get(storedDisabled).pipe(Effect.map((ids) => [...ids])),
+    listUntrusted: Ref.get(storedUntrusted).pipe(Effect.map((ids) => [...ids])),
   });
   const registrationStore = Persistence.ConnectionRegistrationStore.of({
     register: (registration, routes) =>
@@ -264,11 +269,26 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
           next.delete(environmentId);
           return next;
         });
+        yield* Ref.update(storedUntrusted, (current) => {
+          const next = new Set(current);
+          next.delete(environmentId);
+          return next;
+        });
       }),
     setEnabled: (environmentId, enabled) =>
       Ref.update(storedDisabled, (current) => {
         const next = new Set(current);
         if (enabled) {
+          next.delete(environmentId);
+        } else {
+          next.add(environmentId);
+        }
+        return next;
+      }),
+    setTrusted: (environmentId, trusted) =>
+      Ref.update(storedUntrusted, (current) => {
+        const next = new Set(current);
+        if (trusted) {
           next.delete(environmentId);
         } else {
           next.add(environmentId);
@@ -488,6 +508,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedCredentials,
     storedRemoteTokens,
     storedDisabled,
+    storedUntrusted,
     disconnectedSshTargets,
     networkStatus,
     connectedRoutes,
@@ -2315,6 +2336,49 @@ describe("EnvironmentRegistry routes", () => {
           learned: true,
           httpBaseUrl,
         });
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("an untrusted mark covers learned routes and outlives a restart and re-pairing", () =>
+    Effect.gen(function* () {
+      const httpBaseUrl = "http://198.51.100.7:3773/";
+      const harness = yield* makeHarness(
+        [LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        { directEndpoints: [{ kind: "lan", httpBaseUrl }] },
+      );
+      const environmentId = LAN_TARGET.environmentId;
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.setTrusted(environmentId, false);
+        yield* registry.start;
+        yield* SubscriptionRef.changes(registry.entries).pipe(
+          Stream.map((entries) => entries.get(environmentId)?.alternateRoutes?.length ?? 0),
+          Stream.filter((count) => count > 0),
+          Stream.runHead,
+        );
+        yield* registry.register(
+          new BearerConnectionRegistration({
+            target: LAN_TARGET,
+            profile: LAN_PROFILE,
+            credential: BEARER_CREDENTIAL,
+          }),
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(environmentId),
+        ).toBe(true);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+
+      expect(yield* Ref.get(harness.storedUntrusted)).toEqual(new Set([environmentId]));
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(environmentId),
+        ).toBe(true);
+        yield* registry.setTrusted(environmentId, true);
+        expect(yield* Ref.get(harness.storedUntrusted)).toEqual(new Set());
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );
