@@ -45,7 +45,7 @@ const hostedUrls = (input: {
   readonly untrusted: ReadonlyArray<EnvironmentId>;
   readonly trustReady?: boolean;
   readonly saved?: ReadonlyArray<EnvironmentId>;
-  readonly own?: ReadonlyArray<EnvironmentId>;
+  readonly primary?: EnvironmentId;
 }) => {
   const catalog = {
     isReady: true,
@@ -57,7 +57,7 @@ const hostedUrls = (input: {
   };
   const trust = { isReady: input.trustReady ?? true, untrusted: new Set(input.untrusted) };
   return hostedBrowserSessions(previews, null, (id) =>
-    isEnvironmentTrustedIn(trust, catalog, input.own ?? [], id),
+    isEnvironmentTrustedIn(trust, catalog, input.primary ?? null, id),
   ).map(({ snapshot }) => (snapshot.navStatus._tag === "Idle" ? null : snapshot.navStatus.url));
 };
 
@@ -78,9 +78,9 @@ describe("hostedBrowserSessions", () => {
   it("hosts nothing before the marks load, nor for an environment that is not saved", () => {
     const vmRoute = "bearer:http://127.0.0.1:47731";
     expect(hostedUrls({ vmRoute, untrusted: [], trustReady: false })).toEqual([]);
-    // This client's own backend keeps its previews, even when the marks can't be read or name it.
+    // The primary backend keeps its previews, even when the marks can't be read or name it.
     for (const trustReady of [true, false]) {
-      expect(hostedUrls({ vmRoute, untrusted: [LOCAL, VM], trustReady, own: [LOCAL] })).toEqual([
+      expect(hostedUrls({ vmRoute, untrusted: [LOCAL, VM], trustReady, primary: LOCAL })).toEqual([
         "http://127.0.0.1:47690/host",
       ]);
     }
