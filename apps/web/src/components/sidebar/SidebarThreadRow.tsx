@@ -52,6 +52,7 @@ import {
 } from "lucide-react";
 import {
   memo,
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -73,6 +74,7 @@ import { formatRelativeTimeLabel, parseTimestampDate } from "../../timestampForm
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
+import { observeResize } from "~/lib/observeResize";
 import { textDirection } from "~/textDirection";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
@@ -534,14 +536,57 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
 }
 
-// The project name outranks the status word: inline-size containment gives this box no width
-// of its own, so it only fills space the name leaves, and a word that no longer fits wraps
-// onto the clipped second line whole while the icon stays.
-function YieldingStatusLabel(props: { icon: keyof typeof TOP_STATUS_ICONS; label: string }) {
+// Rows switch together: any row whose worded status would cut its project name flags its
+// slot, and the whole tree then shows "time icon". The worded copy stays laid out (absolute,
+// so it never pushes the name) to keep measuring whether words fit again.
+function StatusCluster(props: {
+  icon: keyof typeof TOP_STATUS_ICONS;
+  label: string;
+  time: ReactNode;
+}) {
+  const wordsRef = useRef<HTMLSpanElement>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures layout to flag rows whose worded status no longer fits
+  useEffect(() => {
+    const words = wordsRef.current;
+    const slot = words?.closest<HTMLElement>("[data-status-slot]");
+    if (!words || !slot) return;
+    const name = slot.parentElement?.querySelector<HTMLElement>("[data-project-name]") ?? null;
+    const update = () => {
+      // Space the name gives up by truncating still belongs to it, so hover controls that
+      // widen the slot cannot flip the sidebar.
+      const nameDeficit = name ? name.scrollWidth - name.clientWidth : 0;
+      const room = slot.clientWidth - nameDeficit;
+      slot.toggleAttribute(
+        "data-status-overflow",
+        slot.clientWidth > 0 && words.offsetWidth > room,
+      );
+    };
+    const stop = observeResize(name ? [slot, words, name] : [slot, words], update);
+    return () => {
+      stop();
+      slot.removeAttribute("data-status-overflow");
+    };
+  }, []);
   return (
-    <span className="flex h-4 min-w-4 flex-1 basis-0 flex-wrap items-center justify-end gap-x-1 overflow-hidden [contain:inline-size]">
-      <TopStatusIcon icon={props.icon} className="size-4" />
-      <span className="whitespace-nowrap">{props.label}</span>
+    <span className="relative flex items-center justify-end">
+      <span
+        className={
+          "invisible inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:visible"
+        }
+      >
+        {props.time}
+        <TopStatusIcon icon={props.icon} className="size-4" />
+      </span>
+      <span
+        ref={wordsRef}
+        className={
+          "absolute right-0 inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:invisible"
+        }
+      >
+        <TopStatusIcon icon={props.icon} className="size-4" />
+        {props.label}
+        {props.time}
+      </span>
     </span>
   );
 }
@@ -1288,7 +1333,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                       <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
                         {/* The clock tells a wake time from an age at a glance. */}
-                        <AlarmClockIcon aria-hidden className="size-3" />
+                        <AlarmClockIcon
+                          aria-hidden
+                          className={
+                            "size-3 group-has-[[data-status-overflow]]/sidebar-tree:order-last"
+                          }
+                        />
                         {props.snoozeWakeLabelText}
                       </span>
                     ) : (inFolder ? isWokeStatus : isWoke) ? (
@@ -1448,7 +1498,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 label for the wider row controls. */}
               {pinIndicator}
               {props.projectDisplayName ? (
-                <span className="min-w-0 truncate font-normal text-secondary-label text-xs">
+                <span
+                  data-project-name
+                  className="min-w-0 truncate font-normal text-secondary-label text-xs"
+                >
                   {props.projectDisplayName}
                 </span>
               ) : null}
@@ -1456,6 +1509,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 dragDestination
               ) : (
                 <span
+                  data-status-slot
                   className={cn(
                     "group/sidebar-status-slot relative flex h-5 flex-1 basis-0 items-stretch justify-end text-xs",
                     props.sweepAction !== null && "hidden",
@@ -1493,25 +1547,27 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           <TooltipPopup side="top">Dismiss Woke notification</TooltipPopup>
                         </Tooltip>
                       ) : (
-                        <span
-                          className={cn(
-                            "flex flex-1 basis-0 items-center justify-end gap-1 font-medium",
-                            topStatus.className,
-                          )}
-                        >
+                        <span className={cn("flex items-center font-medium", topStatus.className)}>
                           {/* Not a live region: a collapsed sidebar is inert, so
                             BackgroundThreadAnnouncer and the open thread's
                             timeline speak status changes instead. */}
-                          <YieldingStatusLabel icon={topStatus.icon} label={topStatus.label} />
-                          {status === "working" ? (
-                            <span aria-hidden>
-                              <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
-                            </span>
-                          ) : status === "waiting" ? (
-                            <span aria-hidden>
-                              <WorkingDuration startedAt={thread.latestRun?.completedAt ?? null} />
-                            </span>
-                          ) : null}
+                          <StatusCluster
+                            icon={topStatus.icon}
+                            label={topStatus.label}
+                            time={
+                              status === "working" ? (
+                                <span aria-hidden>
+                                  <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
+                                </span>
+                              ) : status === "waiting" ? (
+                                <span aria-hidden>
+                                  <WorkingDuration
+                                    startedAt={thread.latestRun?.completedAt ?? null}
+                                  />
+                                </span>
+                              ) : null
+                            }
+                          />
                         </span>
                       )
                     ) : (

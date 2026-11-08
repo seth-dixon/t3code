@@ -3295,7 +3295,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                     {...SIDEBAR_TREE_PROPS}
                     ref={attachTreeRef}
                     className={cn(
-                      "relative flex flex-col gap-px",
+                      "group/sidebar-tree relative flex flex-col gap-px",
                       sidebarListItems.length > 0 && "flex-1",
                       actionSweep !== null && "**:pointer-events-none",
                     )}
