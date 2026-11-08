@@ -1433,7 +1433,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const mediaKind = mediaKindFromPath(classifiedSrc);
     // Any address an untrusted environment names would be fetched from this machine's network.
     if (
-      environmentId !== null &&
       !environmentTrusted &&
       imageSource._tag === "Direct" &&
       !/^(?:data|blob):/i.test(imageSource.uri)

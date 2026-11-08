@@ -1,3 +1,5 @@
+import { useAtomValue } from "@effect/atom-react";
+import { environmentCatalog } from "../../connection/catalog";
 import { useLoadBalancedEnvironment } from "../../hooks/useLoadBalancedEnvironment";
 import { useLogicalProjectEnvironments } from "../../hooks/useLogicalProjectEnvironments";
 import { useScratchProject } from "../../hooks/useScratchProject";
@@ -73,7 +75,11 @@ export function useDraftEnvironmentRouting(input: DraftEnvironmentRoutingInput) 
   );
   const allProjects = useProjects();
   const { openScratchProject } = useScratchProject();
-  const needsLoadBalancing = automaticEnvironment && !draftThread?.loadBalancedEnvironmentId;
+  const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
+  const assignedEnvironmentId = draftThread?.loadBalancedEnvironmentId;
+  // A machine marked untrusted after the pick gives the draft up, so it is balanced again.
+  const needsLoadBalancing =
+    automaticEnvironment && (!assignedEnvironmentId || trust.untrusted.has(assignedEnvironmentId));
   const loadBalancingCandidates = needsLoadBalancing
     ? logicalProjectEnvironments
         .filter((candidate) => {

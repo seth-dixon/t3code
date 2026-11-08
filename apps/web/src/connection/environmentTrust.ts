@@ -41,10 +41,14 @@ export function readEnvironmentTrusted(environmentId: EnvironmentId): boolean {
   return appAtomRegistry.get(environmentTrustedAtom(environmentId));
 }
 
+/** With no environment, the content may be from any of them, so it is trusted only when all are. */
 export function useEnvironmentTrusted(environmentId: EnvironmentId | null): boolean {
   return useAtomValue(
-    environmentId === null ? untrustedAtom : environmentTrustedAtom(environmentId),
+    environmentId === null ? noEnvironmentUntrustedAtom : environmentTrustedAtom(environmentId),
   );
 }
 
-const untrustedAtom = Atom.make(false).pipe(Atom.withLabel("environment-trusted:none"));
+const noEnvironmentUntrustedAtom = Atom.make((get) => {
+  const trust = get(environmentCatalog.untrustedEnvironmentIdsValueAtom);
+  return trust.isReady && trust.untrusted.size === 0;
+}).pipe(Atom.withLabel("environment-trusted:unknown"));

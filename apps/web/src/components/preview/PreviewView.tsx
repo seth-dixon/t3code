@@ -1003,7 +1003,8 @@ export function PreviewView({
                 threadId={threadRef.threadId}
                 tabId={snapshot.tabId}
                 pdfUrl={
-                  navStatus._tag === "Success"
+                  // The embed would load in this app, so an untrusted server's PDFs stay streamed.
+                  navStatus._tag === "Success" && environmentTrusted
                     ? previewPdfAssetUrl(url, environmentHttpBaseUrl)
                     : null
                 }

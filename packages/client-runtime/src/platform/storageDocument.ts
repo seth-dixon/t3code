@@ -132,8 +132,13 @@ export function registerConnectionInCatalog(
   document: ConnectionCatalogDocument,
   registration: ConnectionRegistration,
   routes: ReadonlyArray<PersistedConnectionTarget> = [registration.target],
+  untrusted = false,
 ): ConnectionCatalogDocument {
-  const next = setRoutesInCatalog(document, registration.target.environmentId, routes);
+  const routed = setRoutesInCatalog(document, registration.target.environmentId, routes);
+  // One write, so a saved connection can never exist without the mark it was added with.
+  const next = untrusted
+    ? setConnectionTrustedInCatalog(routed, registration.target.environmentId, false)
+    : routed;
 
   switch (registration._tag) {
     case "RelayConnectionRegistration":

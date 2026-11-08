@@ -1,6 +1,7 @@
 import {
   ConnectionTransientError,
   PrimaryConnectionTarget,
+  RelayConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ConnectionCatalogDocument, Persistence } from "@t3tools/client-runtime/platform";
@@ -46,6 +47,40 @@ describe("ConnectionStorage.makeCatalogStore", () => {
       expect(quarantined).toEqual(["{not-json"]);
       expect(writes).toHaveLength(1);
       expect(decodeCatalog(writes[0]!)).toEqual(emptyCatalog);
+    }),
+  );
+
+  it.effect("keeps another window's write when this window updates from an older copy", () =>
+    Effect.gen(function* () {
+      const environmentId = EnvironmentId.make("sandbox");
+      let stored: string = encodeCatalog({
+        ...emptyCatalog,
+        targets: [new RelayConnectionTarget({ environmentId, label: "Sandbox" })],
+      });
+      const backend = {
+        read: Effect.sync(() => stored),
+        write: (raw: string) =>
+          Effect.sync(() => {
+            stored = raw;
+          }),
+      };
+      const first = yield* ConnectionStorage.makeCatalogStore(backend);
+      const second = yield* ConnectionStorage.makeCatalogStore(backend);
+      yield* second.read;
+
+      yield* first.update((document) => ({
+        ...document,
+        untrustedEnvironmentIds: [environmentId],
+      }));
+      yield* second.update((document) => ({
+        ...document,
+        disabledEnvironmentIds: [environmentId],
+      }));
+
+      expect(decodeCatalog(stored)).toMatchObject({
+        untrustedEnvironmentIds: [environmentId],
+        disabledEnvironmentIds: [environmentId],
+      });
     }),
   );
 
