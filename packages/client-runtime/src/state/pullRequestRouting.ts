@@ -173,7 +173,7 @@ const routingAllowed = Effect.fn("PullRequestRouting.allowed")(function* (
     return false;
   // Grants live apart from the marks (another tab may still hold one), so check the mark here.
   const untrusted = yield* SubscriptionRef.get(registry.untrustedEnvironmentIds);
-  if (untrusted.has(originId) || untrusted.has(destinationId)) return false;
+  if (untrusted === null || untrusted.has(originId) || untrusted.has(destinationId)) return false;
   const permissions = yield* PullRequestRoutingPermissions;
   const source = yield* permissions.get(origin);
   const target = yield* permissions.get(destination);

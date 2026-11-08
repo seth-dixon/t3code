@@ -100,11 +100,11 @@ export class EnvironmentRegistry extends Context.Service<
     >;
     readonly networkStatus: SubscriptionRef.SubscriptionRef<NetworkStatus>;
     /**
-     * Saved environments this client must not let act on its own machine: no desktop-hosted
-     * previews or open-in-editor, and no pull request routing. Keyed by environment id, so every
-     * route of the environment, learned ones included, stays covered.
+     * Environments this client must not let act on its own machine, keyed by id so every route
+     * stays covered. `null` while the marks can't be read: every environment then counts as
+     * untrusted. This client's own backends are never in it.
      */
-    readonly untrustedEnvironmentIds: SubscriptionRef.SubscriptionRef<ReadonlySet<EnvironmentId>>;
+    readonly untrustedEnvironmentIds: SubscriptionRef.SubscriptionRef<ReadonlySet<EnvironmentId> | null>;
     readonly start: Effect.Effect<void>;
     /**
      * Succeeds with `false` and changes nothing when the environment is
@@ -241,13 +241,8 @@ export const make = Effect.gen(function* () {
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
   const trustMarks = yield* EnvironmentTrustMarks;
-  const untrustedEnvironmentIds = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(
-    Option.getOrElse(yield* Stream.runHead(trustMarks.changes), () => new Set<EnvironmentId>()),
-  );
-  // Another window can mark or clear an environment at any time; follow it.
-  yield* trustMarks.changes.pipe(
-    Stream.runForEach((ids) => SubscriptionRef.set(untrustedEnvironmentIds, ids)),
-    Effect.forkIn(registryScope),
+  const untrustedEnvironmentIds = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId> | null>(
+    yield* trustMarks.read.pipe(Effect.orElseSucceed(() => null)),
   );
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
     target: ConnectionTarget,
@@ -300,6 +295,24 @@ export const make = Effect.gen(function* () {
     ReadonlyMap<EnvironmentId, EnvironmentServiceScope>
   >(new Map());
   const platformEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
+  const trustRefreshLock = yield* Semaphore.make(1);
+  // Reads the stored marks fresh, one refresh at a time, so an older read never lands after a
+  // newer one. This client's own backends are the trust anchor, so their marks never count.
+  const refreshTrust = trustRefreshLock.withPermits(1)(
+    Effect.gen(function* () {
+      const marks = yield* trustMarks.read.pipe(Effect.orElseSucceed(() => null));
+      const platformIds = yield* Ref.get(platformEnvironmentIds);
+      yield* SubscriptionRef.set(
+        untrustedEnvironmentIds,
+        marks === null ? null : new Set([...marks].filter((id) => !platformIds.has(id))),
+      );
+    }),
+  );
+  // Another window can mark or clear an environment at any time.
+  yield* trustMarks.changed.pipe(
+    Stream.runForEach(() => refreshTrust),
+    Effect.forkIn(registryScope),
+  );
   const persistedEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(persistedRoutesByEnvironment.keys()),
   );
@@ -590,13 +603,7 @@ export const make = Effect.gen(function* () {
     trusted: boolean,
   ) {
     yield* trustMarks.set(environmentId, trusted);
-    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
-      if (current.has(environmentId) !== trusted) return current;
-      const next = new Set(current);
-      if (trusted) next.delete(environmentId);
-      else next.add(environmentId);
-      return next;
-    });
+    yield* refreshTrust;
     if (!trusted) yield* pullRequestRoutingPermissions.forget(environmentId);
   });
 
@@ -716,17 +723,7 @@ export const make = Effect.gen(function* () {
             next.add(target.environmentId);
             return next;
           });
-          // This client's own backend is the trust anchor; a mark from its saved past no longer applies.
-          if ((yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(target.environmentId)) {
-            yield* setTrustedLocked(target.environmentId, true).pipe(
-              Effect.catch((error) =>
-                Effect.logWarning("Could not clear the untrusted mark of a platform environment.", {
-                  environmentId: target.environmentId,
-                  error,
-                }),
-              ),
-            );
-          }
+          yield* refreshTrust;
 
           // Secondary desktop-local backends (e.g. a parallel WSL backend) live
           // on their own loopback origin, so they authenticate with a bearer
@@ -847,6 +844,7 @@ export const make = Effect.gen(function* () {
             next.delete(environmentId);
             return next;
           });
+          yield* refreshTrust;
           yield* closeServiceScope(environmentId);
           yield* SubscriptionRef.update(entries, (current) => {
             const next = new Map(current);
@@ -938,17 +936,6 @@ export const make = Effect.gen(function* () {
       next.delete(environmentId);
       return next;
     });
-    if ((yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(environmentId)) {
-      // A mark left behind fails closed: the same environment added again starts untrusted.
-      yield* setTrustedLocked(environmentId, true).pipe(
-        Effect.catch((error) =>
-          Effect.logWarning("Could not clear the untrusted mark after removal.", {
-            environmentId,
-            error,
-          }),
-        ),
-      );
-    }
     yield* Effect.all(
       [
         cache.clear(environmentId).pipe(

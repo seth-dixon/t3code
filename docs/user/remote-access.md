@@ -176,12 +176,13 @@ for that machine:
 
 - Browser pages open in its server browser, never in this app.
 - **Open in** offers no editor, so it can't open files or links on this device.
-- HTML replies, MCP apps, HTML and PDF files, and images that point at other addresses
-  show a short notice instead.
+- HTML replies, MCP apps, and HTML and PDF files show a short notice instead. Images
+  still load, as they would on any web page.
 - Pull request sharing stays off, and load balancing skips it.
 
 The mark belongs to the machine, so it covers every address it's reached at and stays
-after restarts. It applies only in the app or browser where you set it: the desktop app
+after restarts. Removing the machine keeps the mark, so it comes back untrusted if you
+add it again. It applies only in the app or browser where you set it: the desktop app
 and app.t3.codes keep separate marks. Mobile doesn't offer it yet.
 
 ### Tailscale HTTPS

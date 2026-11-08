@@ -714,28 +714,28 @@ const yieldToBrowserTask = Effect.callback<void>((resume) => {
 
 const UNTRUSTED_ENVIRONMENT_KEY_PREFIX = "t3code:untrusted-environment:";
 const UNTRUSTED_ENVIRONMENTS_CHANGED = "t3code:untrusted-environments-changed";
+const decodeMarkedEnvironmentId = Schema.decodeOption(EnvironmentId);
 
 /** One key per mark, like routing grants, so a stale tab's catalog save cannot clear one. */
 export function makeBrowserEnvironmentTrustMarks(
   browser: Pick<Window, "localStorage"> & EventTarget = window,
 ) {
-  const readAll = (): ReadonlySet<EnvironmentId> => {
-    const ids = new Set<EnvironmentId>();
-    try {
-      const storage = browser.localStorage;
-      for (let index = 0; index < storage.length; index++) {
-        const key = storage.key(index);
-        if (key?.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) {
-          ids.add(EnvironmentId.make(key.slice(UNTRUSTED_ENVIRONMENT_KEY_PREFIX.length)));
-        }
-      }
-    } catch {
-      // Unreadable storage keeps no marks; trust still needs a saved, loaded environment.
-    }
-    return ids;
-  };
   return EnvironmentTrustMarks.of({
-    changes: Stream.callback<ReadonlySet<EnvironmentId>>((queue) =>
+    read: Effect.try({
+      try: () => {
+        const ids = new Set<EnvironmentId>();
+        const storage = browser.localStorage;
+        for (let index = 0; index < storage.length; index++) {
+          const key = storage.key(index);
+          if (!key?.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) continue;
+          const id = decodeMarkedEnvironmentId(key.slice(UNTRUSTED_ENVIRONMENT_KEY_PREFIX.length));
+          if (Option.isSome(id)) ids.add(id.value);
+        }
+        return ids as ReadonlySet<EnvironmentId>;
+      },
+      catch: (cause) => catalogError("read environment trust from", cause),
+    }),
+    changed: Stream.callback<void>((queue) =>
       Effect.acquireRelease(
         Effect.sync(() => {
           const listener = (event: Event) => {
@@ -743,11 +743,12 @@ export function makeBrowserEnvironmentTrustMarks(
               const key = (event as StorageEvent).key;
               if (key !== null && !key.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) return;
             }
-            Queue.offerUnsafe(queue, readAll());
+            Queue.offerUnsafe(queue, undefined);
           };
           browser.addEventListener("storage", listener);
           browser.addEventListener(UNTRUSTED_ENVIRONMENTS_CHANGED, listener);
-          Queue.offerUnsafe(queue, readAll());
+          // Covers a change made between the caller's first read and this subscription.
+          Queue.offerUnsafe(queue, undefined);
           return listener;
         }),
         (listener) =>

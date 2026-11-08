@@ -288,33 +288,34 @@ describe("browser GitHub routing permissions", () => {
 });
 
 describe("browser environment trust marks", () => {
+  const makeStorage = (values = new Map<string, string>()): Storage => ({
+    get length() {
+      return values.size;
+    },
+    key: (index) => [...values.keys()][index] ?? null,
+    getItem: (key) => values.get(key) ?? null,
+    setItem: (key, value) => {
+      values.set(key, value);
+    },
+    removeItem: (key) => {
+      values.delete(key);
+    },
+    clear: () => {
+      values.clear();
+    },
+  });
+
   it.effect("shows a mark made in one tab to another tab", () =>
     Effect.gen(function* () {
-      const values = new Map<string, string>();
-      const localStorage: Storage = {
-        get length() {
-          return values.size;
-        },
-        key: (index) => [...values.keys()][index] ?? null,
-        getItem: (key) => values.get(key) ?? null,
-        setItem: (key, value) => {
-          values.set(key, value);
-        },
-        removeItem: (key) => {
-          values.delete(key);
-        },
-        clear: () => {
-          values.clear();
-        },
-      };
+      const localStorage = makeStorage();
       const firstTab = Object.assign(new EventTarget(), { localStorage });
       const secondTab = Object.assign(new EventTarget(), { localStorage });
       const first = ConnectionStorage.makeBrowserEnvironmentTrustMarks(firstTab);
       const second = ConnectionStorage.makeBrowserEnvironmentTrustMarks(secondTab);
       const sandbox = EnvironmentId.make("sandbox");
       const seen = yield* Queue.unbounded<ReadonlySet<EnvironmentId>>();
-      yield* second.changes.pipe(
-        Stream.runForEach((ids) => Queue.offer(seen, ids)),
+      yield* second.changed.pipe(
+        Stream.runForEach(() => Effect.flatMap(second.read, (ids) => Queue.offer(seen, ids))),
         Effect.forkChild,
       );
       expect(yield* Queue.take(seen)).toEqual(new Set());
@@ -327,5 +328,29 @@ describe("browser environment trust marks", () => {
       secondTab.dispatchEvent(Object.assign(new Event("storage"), { key: null }));
       expect(yield* Queue.take(seen)).toEqual(new Set());
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails to read rather than report no marks when storage is unreadable", () =>
+    Effect.gen(function* () {
+      const values = new Map([
+        ["t3code:untrusted-environment:", "1"],
+        ["t3code:untrusted-environment:sandbox", "1"],
+      ]);
+      const readable = ConnectionStorage.makeBrowserEnvironmentTrustMarks(
+        Object.assign(new EventTarget(), { localStorage: makeStorage(values) }),
+      );
+      expect(yield* readable.read).toEqual(new Set([EnvironmentId.make("sandbox")]));
+
+      const blocked = new EventTarget();
+      Object.defineProperty(blocked, "localStorage", {
+        get: () => {
+          throw new DOMException("blocked", "SecurityError");
+        },
+      });
+      const unreadable = ConnectionStorage.makeBrowserEnvironmentTrustMarks(
+        blocked as EventTarget & Pick<Window, "localStorage">,
+      );
+      expect((yield* Effect.flip(unreadable.read))._tag).toBe("ConnectionTransientError");
+    }),
   );
 });

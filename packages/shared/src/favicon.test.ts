@@ -28,18 +28,6 @@ describe("toolActivityFaviconUrl", () => {
     );
   });
 
-  it("never contacts a host an untrusted environment names", () => {
-    const icon = (pageUrl: string, faviconUrl?: string) =>
-      toolActivityFaviconUrl({ pageUrl, faviconUrl }, "light", 32, true);
-    expect(icon("http://localhost:5173/app")).toBeNull();
-    expect(icon("https://127.0.0.1.nip.io/docs", "https://127.0.0.1.nip.io/x.png")).toBe(
-      "https://www.google.com/s2/favicons?domain=127.0.0.1.nip.io&sz=32",
-    );
-    expect(icon("http://10.0.0.2/", "data:image/png;base64,AA==")).toBe(
-      "data:image/png;base64,AA==",
-    );
-  });
-
   it("accepts provider-supplied image URLs but rejects extension URLs", () => {
     expect(
       toolActivityFaviconUrl(

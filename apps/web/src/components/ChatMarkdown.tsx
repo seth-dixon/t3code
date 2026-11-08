@@ -156,7 +156,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
-import { readEnvironmentTrusted, useEnvironmentTrusted } from "../connection/environmentTrust";
+import { readEnvironmentTrusted } from "../connection/environmentTrust";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
@@ -1463,7 +1463,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
       fileLinkChip,
       resolvedTheme,
     } = use(ChatMarkdownRendererContext);
-    const environmentTrusted = useEnvironmentTrusted(environmentId);
     const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
     if (contextReference) {
@@ -1492,20 +1491,6 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
     const mediaKind = mediaKindFromPath(classifiedSrc);
-    // Any address an untrusted environment names would be fetched from this machine's network.
-    if (
-      !environmentTrusted &&
-      imageSource._tag === "Direct" &&
-      !/^(?:data|blob):/i.test(imageSource.uri)
-    ) {
-      return (
-        <ChatMarkdownImageFallback
-          alt={altText}
-          copyMarkdown={copyMarkdown}
-          kind={mediaKind ?? "image"}
-        />
-      );
-    }
     if (mediaKind === "audio") {
       const filePath = imageSource._tag === "WorkspaceFile" ? imageSource.path : null;
       const name =
