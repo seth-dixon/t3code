@@ -1623,28 +1623,6 @@ describe("Working section beta", () => {
     const off = build({ workingShelfEnabled: false });
     expect(ids(off)).toContain("working");
     expect(off.workingCount).toBe(0);
-
-    const shelfRows = (layout: ReturnType<typeof buildThreadListV2Items>) =>
-      layout.items.filter((item) => item.inWorkingShelf).map((item) => item.thread.id);
-    expect(shelfRows(build({ workingShelfExpanded: true }))).toEqual(["working"]);
-    expect(shelfRows(off)).toEqual([]);
-    expect(shelfRows(build({ workingShelfExpanded: true, searchQuery: "working" }))).toEqual([]);
-
-    // The same lone row, so only the shelf flag differs between the two lists.
-    const alone = threads.filter((thread) => thread.id === "working");
-    const workingRow = (layout: ReturnType<typeof buildThreadListV2Items>) => {
-      const row = buildThreadListV2ListItems({ items: layout.items, pendingTasks: [] }).find(
-        (item) => item.type === "v2-thread" && item.item.thread.id === "working",
-      );
-      if (row === undefined) throw new Error("missing working row");
-      return row;
-    };
-    expect(
-      threadListV2ListItemsAreEqual(
-        workingRow(build({ threads: alone, workingShelfExpanded: true })),
-        workingRow(build({ threads: alone, workingShelfExpanded: true, searchQuery: "working" })),
-      ),
-    ).toBe(false);
   });
 
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {

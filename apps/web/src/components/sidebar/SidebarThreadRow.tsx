@@ -532,13 +532,23 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
 }
 
+// The project name outranks the status word: inline-size containment gives this box no width
+// of its own, so it only fills space the name leaves, and a word that no longer fits wraps
+// onto the clipped second line whole while the icon stays.
+function YieldingStatusLabel(props: { icon: keyof typeof TOP_STATUS_ICONS; label: string }) {
+  return (
+    <span className="flex h-4 min-w-4 flex-1 basis-0 flex-wrap items-center justify-end gap-x-1 overflow-hidden [contain:inline-size]">
+      <TopStatusIcon icon={props.icon} className="size-4" />
+      <span className="whitespace-nowrap">{props.label}</span>
+    </span>
+  );
+}
+
 type SidebarThreadRowProps = {
   thread: SidebarThreadSummary;
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
-  // The Working section's heading already says "Working", so its rows show only the time.
-  inWorkingShelf?: boolean | undefined;
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -1438,20 +1448,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                 label for the wider row controls. */}
               {pinIndicator}
               {props.projectDisplayName ? (
-                <span
-                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
-                >
+                <span className="min-w-0 truncate font-normal text-secondary-label text-xs">
                   {props.projectDisplayName}
                 </span>
-              ) : (
-                <span className="flex-1" />
-              )}
+              ) : null}
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
                 <span
                   className={cn(
-                    "group/sidebar-status-slot relative ml-auto flex h-5 min-w-8 shrink-0 items-stretch justify-end text-xs",
+                    "group/sidebar-status-slot relative flex h-5 flex-1 basis-0 items-stretch justify-end text-xs",
                     props.sweepAction !== null && "hidden",
                     jumpHintLabel && JUMP_HINT_SLOT_CLASS_NAME,
                   )}
@@ -1461,7 +1467,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       isWokeStatus
                         ? "pointer-events-auto"
                         : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
-                      "flex items-center self-center justify-self-end tabular-nums text-secondary-label",
+                      "flex flex-1 basis-0 items-center justify-end self-center tabular-nums text-secondary-label",
                       snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
                   >
@@ -1489,17 +1495,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       ) : (
                         <span
                           className={cn(
-                            "inline-flex items-center gap-1 font-medium",
+                            "flex flex-1 basis-0 items-center justify-end gap-1 font-medium",
                             topStatus.className,
                           )}
                         >
-                          <TopStatusIcon icon={topStatus.icon} className="size-4" />
                           {/* Not a live region: a collapsed sidebar is inert, so
                             BackgroundThreadAnnouncer and the open thread's
                             timeline speak status changes instead. */}
-                          {props.inWorkingShelf && topStatus.label === "Working"
-                            ? null
-                            : topStatus.label}
+                          <YieldingStatusLabel icon={topStatus.icon} label={topStatus.label} />
                           {status === "working" ? (
                             <span aria-hidden>
                               <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
