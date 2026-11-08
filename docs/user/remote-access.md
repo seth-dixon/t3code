@@ -178,7 +178,7 @@ for that machine:
 - Browser pages open in its server browser, never in this app.
 - **Open in** offers no editor, so it can't open files or links on this device.
 - HTML replies, MCP apps, and HTML and PDF files show a short notice instead. Images
-  still load, as they would on any web page.
+  and other files it links to still load, as they would from any web page.
 - Pull request sharing stays off, and load balancing skips it.
 
 The mark belongs to the machine, so it covers every address it's reached at and stays
