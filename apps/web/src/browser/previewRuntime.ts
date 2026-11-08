@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, PreviewRuntime, PreviewSessionSnapshot } from "@t3tools/contracts";
 
+import { readEnvironmentTrusted, useEnvironmentTrusted } from "~/connection/environmentTrust";
 import { isElectron } from "~/env";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -11,6 +12,8 @@ import {
 } from "~/state/entities";
 
 export function previewRuntimeFor(environmentId: EnvironmentId): PreviewRuntime | undefined {
+  // An untrusted environment's tabs never load on this machine; its server renders them or none.
+  if (!readEnvironmentTrusted(environmentId)) return "server";
   if (!readEnvironmentSupportsServerBrowser(environmentId)) return undefined;
   if (
     isPreviewSupportedInRuntime() &&
@@ -29,16 +32,21 @@ export function alternatePreviewRuntime(
 ): PreviewRuntime | null {
   if (!snapshot || !serverBrowser || !isPreviewSupportedInRuntime()) return null;
   if (environmentId === primaryEnvironmentId) return null;
+  if (!readEnvironmentTrusted(environmentId)) return null;
   return snapshot.runtime === "server" ? "desktop" : "server";
 }
 
 export function isPreviewAvailableFor(environmentId: EnvironmentId): boolean {
-  return isPreviewSupportedInRuntime() || readEnvironmentSupportsServerBrowser(environmentId);
+  return (
+    (isPreviewSupportedInRuntime() && readEnvironmentTrusted(environmentId)) ||
+    readEnvironmentSupportsServerBrowser(environmentId)
+  );
 }
 
 export function usePreviewAvailable(environmentId: EnvironmentId | null): boolean {
   const serverBrowser = useEnvironmentSupportsServerBrowser(environmentId);
-  return isPreviewSupportedInRuntime() || serverBrowser;
+  const trusted = useEnvironmentTrusted(environmentId);
+  return (isPreviewSupportedInRuntime() && trusted) || serverBrowser;
 }
 
 export function rendersServerTabNatively(

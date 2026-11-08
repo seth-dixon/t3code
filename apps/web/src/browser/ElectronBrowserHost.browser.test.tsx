@@ -27,6 +27,13 @@ vi.mock(import("~/state/session"), async (original) => ({
   useEnvironmentScope: () => true,
 }));
 
+// No environment catalog runs here; hostedBrowserSessions.test.ts covers the trust filter.
+vi.mock(import("~/connection/environmentTrust"), async (original) => ({
+  ...(await original()),
+  isEnvironmentTrustedIn: () => true,
+  readEnvironmentTrusted: () => true,
+}));
+
 vi.mock(import("~/localApi"), async (original) => {
   const actual = await original();
   return {

@@ -62,6 +62,7 @@ import {
   type StoredPullRequestRoutingPermission,
   makePullRequestRoutingPermissions,
 } from "./pullRequestRoutingPermissions.ts";
+import { EnvironmentTrustMarks } from "./environmentTrustMarks.ts";
 import * as RpcSession from "../rpc/session.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
@@ -167,6 +168,9 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       target: ConnectionTarget,
     ) => Effect.Effect<ConnectionBlockedError | undefined>;
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
+    readonly initialUntrusted?: ReadonlyArray<EnvironmentId>;
+    readonly setTrustedFails?: boolean;
+    readonly readTrustFails?: boolean;
     readonly directEndpoints?: ServerConfig["directEndpoints"];
   },
 ) {
@@ -205,6 +209,35 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const storedDisabled = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(options?.initialDisabled ?? []),
   );
+  const storedUntrusted = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(
+    new Set(options?.initialUntrusted ?? []),
+  );
+  const trustMarks = EnvironmentTrustMarks.of({
+    read:
+      options?.readTrustFails === true
+        ? Effect.fail(
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: "storage unavailable",
+            }),
+          )
+        : SubscriptionRef.get(storedUntrusted),
+    changed: SubscriptionRef.changes(storedUntrusted).pipe(Stream.map(() => undefined)),
+    set: (environmentId, trusted) =>
+      options?.setTrustedFails === true
+        ? Effect.fail(
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: "storage unavailable",
+            }),
+          )
+        : SubscriptionRef.update(storedUntrusted, (current) => {
+            const next = new Set(current);
+            if (trusted) next.delete(environmentId);
+            else next.add(environmentId);
+            return next;
+          }),
+  });
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets),
     listDisabled: Ref.get(storedDisabled).pipe(Effect.map((ids) => [...ids])),
@@ -471,6 +504,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         Layer.succeed(ConnectionDriver.ConnectionDriver, driver),
         layerCache,
         Layer.succeed(Persistence.EnvironmentOwnedDataCleanup, ownedDataCleanup),
+        Layer.succeed(EnvironmentTrustMarks, trustMarks),
       ),
     ),
   );
@@ -488,6 +522,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedCredentials,
     storedRemoteTokens,
     storedDisabled,
+    storedUntrusted,
     disconnectedSshTargets,
     networkStatus,
     connectedRoutes,
@@ -1661,6 +1696,7 @@ describe("EnvironmentRegistry", () => {
               ]
             : [],
           {
+            initialUntrusted: [target.environmentId],
             beforeRegistrationRemove: () =>
               failRemoval
                 ? Effect.fail(
@@ -1700,6 +1736,11 @@ describe("EnvironmentRegistry", () => {
           ).toEqual(target);
           expect(hasRoutes(yield* Ref.get(harness.storedTargets), target.environmentId)).toBe(
             false,
+          );
+          // This client's own backend never counts as marked, even while its old mark stays stored.
+          expect(yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).toEqual(new Set());
+          expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(
+            new Set([target.environmentId]),
           );
           if (registration._tag === "BearerConnectionRegistration") {
             expect(
@@ -2316,6 +2357,104 @@ describe("EnvironmentRegistry routes", () => {
           httpBaseUrl,
         });
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("an untrusted mark covers learned routes and outlives a restart and re-pairing", () =>
+    Effect.gen(function* () {
+      const httpBaseUrl = "http://198.51.100.7:3773/";
+      const harness = yield* makeHarness(
+        [LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        { directEndpoints: [{ kind: "lan", httpBaseUrl }] },
+      );
+      const environmentId = LAN_TARGET.environmentId;
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.setTrusted(environmentId, false);
+        yield* registry.start;
+        yield* SubscriptionRef.changes(registry.entries).pipe(
+          Stream.map((entries) => entries.get(environmentId)?.alternateRoutes?.length ?? 0),
+          Stream.filter((count) => count > 0),
+          Stream.runHead,
+        );
+        yield* registry.register(
+          new BearerConnectionRegistration({
+            target: LAN_TARGET,
+            profile: LAN_PROFILE,
+            credential: BEARER_CREDENTIAL,
+          }),
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
+        ).toBe(true);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+
+      expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(new Set([environmentId]));
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
+        ).toBe(true);
+        yield* registry.setTrusted(environmentId, true);
+        expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(new Set());
+
+        // Another window marks it again; this registry follows without a restart.
+        yield* SubscriptionRef.set(harness.storedUntrusted, new Set([environmentId]));
+        yield* SubscriptionRef.changes(registry.untrustedEnvironmentIds).pipe(
+          Stream.filter((ids) => ids?.has(environmentId) === true),
+          Stream.runHead,
+        );
+
+        // Removing it leaves the mark, so the environment comes back untrusted, here and in
+        // any other window still holding it.
+        yield* registry.remove(environmentId);
+        expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(
+          new Set([environmentId]),
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
+        ).toBe(true);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("counts every environment untrusted while the marks can't be read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        { readTrustFails: true },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).toBeNull();
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("never saves a connection added as untrusted when its mark can't be saved", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness([], [], [], { setTrustedFails: true });
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const failed = yield* registry
+          .register(
+            new BearerConnectionRegistration({
+              target: LAN_TARGET,
+              profile: LAN_PROFILE,
+              credential: BEARER_CREDENTIAL,
+            }),
+            { untrusted: true },
+          )
+          .pipe(Effect.flip);
+        expect(failed._tag).toBe("ConnectionPersistenceError");
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+      expect(hasRoutes(yield* Ref.get(harness.storedTargets), LAN_TARGET.environmentId)).toBe(
+        false,
+      );
     }),
   );
 

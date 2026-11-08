@@ -42,6 +42,7 @@ import {
   PullRequestRoutingPermissions,
   pullRequestRoutingConnectionKey,
 } from "./pullRequestRoutingPermissions.ts";
+import { EnvironmentTrustMarks } from "./environmentTrustMarks.ts";
 import {
   RELAY_ROUTE_ID,
   connectionRouteId,
@@ -98,15 +99,22 @@ export class EnvironmentRegistry extends Context.Service<
       ReadonlyMap<EnvironmentId, ConnectionCatalogEntry>
     >;
     readonly networkStatus: SubscriptionRef.SubscriptionRef<NetworkStatus>;
+    /**
+     * Environments this client must not let act on its own machine, keyed by id so every route
+     * stays covered. `null` while the marks can't be read: every environment then counts as
+     * untrusted. This client's own backends are never in it.
+     */
+    readonly untrustedEnvironmentIds: SubscriptionRef.SubscriptionRef<ReadonlySet<EnvironmentId> | null>;
     readonly start: Effect.Effect<void>;
     /**
      * Succeeds with `false` and changes nothing when the environment is
      * platform-managed, since the host owns that entry. With `knownAddressOnly`, it fails like
-     * `assertKnownAddress`, checked under the environment's lease.
+     * `assertKnownAddress`, checked under the environment's lease. With `untrusted`, the
+     * environment is marked untrusted before it first connects; an existing mark is never cleared.
      */
     readonly register: (
       registration: ConnectionRegistration,
-      options?: { readonly knownAddressOnly?: boolean },
+      options?: { readonly knownAddressOnly?: boolean; readonly untrusted?: boolean },
     ) => Effect.Effect<boolean, Persistence.ConnectionPersistenceError | ConnectionBlockedError>;
     /**
      * Fails when the route would add a new address to a saved user environment. Pairing that does
@@ -171,6 +179,16 @@ export class EnvironmentRegistry extends Context.Service<
       environmentId: EnvironmentId,
       error: ConnectionBlockedError | null,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
+    readonly setTrusted: (
+      environmentId: EnvironmentId,
+      trusted: boolean,
+    ) => Effect.Effect<
+      void,
+      | EnvironmentNotRegisteredError
+      | PlatformEnvironmentRemovalError
+      | Persistence.ConnectionPersistenceError
+      | ConnectionAttemptError
+    >;
     readonly state: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<SupervisorConnectionState, EnvironmentNotRegisteredError>;
@@ -222,6 +240,10 @@ export const make = Effect.gen(function* () {
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
+  const trustMarks = yield* EnvironmentTrustMarks;
+  const untrustedEnvironmentIds = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId> | null>(
+    yield* trustMarks.read.pipe(Effect.orElseSucceed(() => null)),
+  );
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
     target: ConnectionTarget,
   ) {
@@ -273,6 +295,24 @@ export const make = Effect.gen(function* () {
     ReadonlyMap<EnvironmentId, EnvironmentServiceScope>
   >(new Map());
   const platformEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(new Set());
+  const trustRefreshLock = yield* Semaphore.make(1);
+  // Reads the stored marks fresh, one refresh at a time, so an older read never lands after a
+  // newer one. This client's own backends are the trust anchor, so their marks never count.
+  const refreshTrust = trustRefreshLock.withPermits(1)(
+    Effect.gen(function* () {
+      const marks = yield* trustMarks.read.pipe(Effect.orElseSucceed(() => null));
+      const platformIds = yield* Ref.get(platformEnvironmentIds);
+      yield* SubscriptionRef.set(
+        untrustedEnvironmentIds,
+        marks === null ? null : new Set([...marks].filter((id) => !platformIds.has(id))),
+      );
+    }),
+  );
+  // Another window can mark or clear an environment at any time.
+  yield* trustMarks.changed.pipe(
+    Stream.runForEach(() => refreshTrust),
+    Effect.forkIn(registryScope),
+  );
   const persistedEnvironmentIds = yield* Ref.make<ReadonlySet<EnvironmentId>>(
     new Set(persistedRoutesByEnvironment.keys()),
   );
@@ -558,9 +598,18 @@ export const make = Effect.gen(function* () {
     }
   });
 
+  const setTrustedLocked = Effect.fn("EnvironmentRegistry.setTrustedLocked")(function* (
+    environmentId: EnvironmentId,
+    trusted: boolean,
+  ) {
+    yield* trustMarks.set(environmentId, trusted);
+    yield* refreshTrust;
+    if (!trusted) yield* pullRequestRoutingPermissions.forget(environmentId);
+  });
+
   const register = Effect.fn("EnvironmentRegistry.register")(function* (
     registration: ConnectionRegistration,
-    options?: { readonly knownAddressOnly?: boolean },
+    options?: { readonly knownAddressOnly?: boolean; readonly untrusted?: boolean },
   ) {
     const registered = connectionRegistrationCatalogEntry(registration);
     const environmentId = registered.target.environmentId;
@@ -589,6 +638,18 @@ export const make = Effect.gen(function* () {
             yield* forgetRoutingTrust(environmentId, "register-connection");
           }
           entry = next.entry;
+        }
+        // Marked before it is saved: if saving fails the stray mark only keeps it untrusted.
+        if (options?.untrusted === true) {
+          yield* setTrustedLocked(environmentId, false).pipe(
+            Effect.mapError(
+              (error) =>
+                new Persistence.ConnectionPersistenceError({
+                  operation: "register-connection",
+                  message: error.message,
+                }),
+            ),
+          );
         }
         yield* registrations.register(registration, persistedRoutes(entry));
         yield* Ref.update(persistedEnvironmentIds, (current) =>
@@ -662,6 +723,7 @@ export const make = Effect.gen(function* () {
             next.add(target.environmentId);
             return next;
           });
+          yield* refreshTrust;
 
           // Secondary desktop-local backends (e.g. a parallel WSL backend) live
           // on their own loopback origin, so they authenticate with a bearer
@@ -782,6 +844,7 @@ export const make = Effect.gen(function* () {
             next.delete(environmentId);
             return next;
           });
+          yield* refreshTrust;
           yield* closeServiceScope(environmentId);
           yield* SubscriptionRef.update(entries, (current) => {
             const next = new Map(current);
@@ -1047,6 +1110,23 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const setTrusted = Effect.fn("EnvironmentRegistry.setTrusted")(function* (
+    environmentId: EnvironmentId,
+    trusted: boolean,
+  ) {
+    yield* withLeaseLock(
+      environmentId,
+      Effect.gen(function* () {
+        // This client's own backends are the trust anchor; they cannot be marked untrusted.
+        if ((yield* Ref.get(platformEnvironmentIds)).has(environmentId)) {
+          return yield* new PlatformEnvironmentRemovalError({ environmentId });
+        }
+        yield* getEntry(environmentId);
+        yield* setTrustedLocked(environmentId, trusted);
+      }),
+    );
+  });
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
       Effect.flatMap((supervisor) => supervisor.retryNow),
@@ -1186,6 +1266,7 @@ export const make = Effect.gen(function* () {
   return EnvironmentRegistry.of({
     entries,
     networkStatus,
+    untrustedEnvironmentIds,
     start,
     register,
     assertKnownAddress,
@@ -1197,6 +1278,7 @@ export const make = Effect.gen(function* () {
     retryNow,
     setEnabled,
     setCompatibility,
+    setTrusted,
     state,
     stateChanges,
     run,

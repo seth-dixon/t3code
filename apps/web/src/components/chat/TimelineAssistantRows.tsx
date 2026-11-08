@@ -22,6 +22,8 @@ import { useUiStateStore } from "~/uiStateStore";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { TimelineRowCtx, TimelineRowActivityCtx, type TimelineRow } from "./timelineRowContext";
+import { UntrustedContentNotice } from "./UntrustedContentNotice";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
 import { MESSAGE_HEADING_LEVEL, MessageAuthorHeading } from "./TimelineRowParts";
 
 export function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
@@ -254,8 +256,20 @@ export function HtmlRenderTimelineRow({
   const { onAppFullscreenChange } = ctx;
   const onFullscreenChange = (fullscreen: boolean) => onAppFullscreenChange(row.id, fullscreen);
 
+  const trusted = useEnvironmentTrusted(ctx.activeThreadEnvironmentId);
+
   if (ctx.renderHtmlRender) {
     return <div className="min-w-0 px-1">{ctx.renderHtmlRender(row)}</div>;
+  }
+  if (!trusted) {
+    return (
+      <div className="min-w-0 px-1">
+        <UntrustedContentNotice
+          environmentId={ctx.activeThreadEnvironmentId}
+          title={row.htmlRender.title}
+        />
+      </div>
+    );
   }
   return (
     <div className="min-w-0 px-1">
@@ -273,7 +287,15 @@ export function HtmlRenderTimelineRow({
 export function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mcp-app" }> }) {
   const ctx = use(TimelineRowCtx);
   const { awaitingUser } = use(TimelineRowActivityCtx);
+  const trusted = useEnvironmentTrusted(ctx.activeThreadEnvironmentId);
 
+  if (!trusted) {
+    return (
+      <div className="min-w-0 px-1">
+        <UntrustedContentNotice environmentId={ctx.activeThreadEnvironmentId} title="This app" />
+      </div>
+    );
+  }
   return (
     <div className="min-w-0 px-1">
       <McpAppFrame

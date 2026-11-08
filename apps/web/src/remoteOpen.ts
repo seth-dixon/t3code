@@ -11,9 +11,11 @@ import { Atom } from "effect/reactivity";
 import { useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { environmentTrustedAtom } from "~/connection/environmentTrust";
 import { isLoopbackHostname } from "~/environments/primary/target";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { environmentPresentations } from "~/state/presentation";
+import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 export interface RemoteOpenHost {
   readonly kind: "ssh-alias" | RemoteOpenTarget["kind"];
@@ -24,7 +26,7 @@ export interface RemoteOpenHost {
 export type RemoteOpenState =
   | { readonly mode: "local-exec" }
   | { readonly mode: "remote-links"; readonly host: RemoteOpenHost }
-  | { readonly mode: "remote-unavailable" };
+  | { readonly mode: "remote-unavailable"; readonly untrusted?: true };
 
 export type RemoteOpenMode = RemoteOpenState["mode"];
 
@@ -35,6 +37,7 @@ export interface RemoteOpenResolution {
 
 const LOCAL_EXEC: RemoteOpenState = { mode: "local-exec" };
 const REMOTE_UNAVAILABLE: RemoteOpenState = { mode: "remote-unavailable" };
+const UNTRUSTED: RemoteOpenState = { mode: "remote-unavailable", untrusted: true };
 const UNRESOLVED_REMOTE_OPEN: RemoteOpenResolution = {
   state: LOCAL_EXEC,
   isResolved: false,
@@ -53,9 +56,19 @@ export function resolveRemoteOpenState(input: {
   readonly sshTarget: { readonly alias: string; readonly username: string | null } | null;
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
   readonly isDesktopRenderer: boolean;
+  /** Untrusted environments never get editor links: their host and path would come from them. */
+  readonly trusted: boolean;
+  /** The id in the desktop app's own T3 home, so a saved connection to that server is local. */
+  readonly hostEnvironmentId: string | null;
 }): RemoteOpenState {
   const { target } = input;
   if (target === null) {
+    return LOCAL_EXEC;
+  }
+  if (!input.trusted) {
+    return UNTRUSTED;
+  }
+  if (input.hostEnvironmentId !== null && target.environmentId === input.hostEnvironmentId) {
     return LOCAL_EXEC;
   }
   if (target._tag === "PrimaryConnectionTarget") {
@@ -96,6 +109,8 @@ export function resolveRemoteOpenState(input: {
 
 function remoteOpenStatesEqual(previous: RemoteOpenState, next: RemoteOpenState): boolean {
   if (previous.mode !== next.mode) return false;
+  if (previous.mode === "remote-unavailable" && next.mode === "remote-unavailable")
+    return previous.untrusted === next.untrusted;
   if (previous.mode !== "remote-links" || next.mode !== "remote-links") return true;
   return (
     previous.host.kind === next.host.kind &&
@@ -120,6 +135,8 @@ const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
           profile !== null && profile._tag === "SshConnectionProfile" ? profile.target : null,
         remoteOpenTargets: presentation?.serverConfig?.remoteOpenTargets,
         isDesktopRenderer: window.desktopBridge !== undefined,
+        trusted: get(environmentTrustedAtom(environmentId)),
+        hostEnvironmentId: get(hostEnvironmentIdAtom),
       }),
       isResolved: true,
     };

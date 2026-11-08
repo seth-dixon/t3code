@@ -16,6 +16,12 @@ const state = vi.hoisted(() => ({
   confirm: vi.fn(async (_message: string) => true),
   connectPairing: vi.fn(async (_input: { pairingUrl: string }) => ({ _tag: "Success" })),
   localEnvironmentDisabled: false,
+  untrusted: new Set<string>(),
+}));
+
+vi.mock(import("../../connection/environmentTrust"), async (original) => ({
+  ...(await original()),
+  readEnvironmentTrusted: (environmentId) => !state.untrusted.has(environmentId),
 }));
 
 // One connected primary environment that can read pull requests. Its project list and
@@ -147,6 +153,7 @@ function setup() {
   vi.clearAllMocks();
   state.confirm.mockResolvedValue(true);
   state.localEnvironmentDisabled = false;
+  state.untrusted = new Set();
   state.projects = [];
   state.routeParams = {};
   state.preview
@@ -274,6 +281,19 @@ it("opens a plain commit the workspace lacks like any other delivered link", asy
   // Handing it to the OS browser would loop when T3 Code is the default browser.
   expect(state.openLink).not.toHaveBeenCalled();
   expect(useDiffPanelStore.getState().byThreadKey).toEqual({});
+  expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+});
+
+it("never hands a delivered link to an untrusted environment's server browser", async () => {
+  setup();
+  state.untrusted = new Set(["local"]);
+  state.routeParams = { environmentId: "local", threadId: "thread" };
+  state.projects = [project];
+  state.preview.mockResolvedValueOnce(AsyncResult.success({ sources: [] }));
+  appAtomRegistry.set(discoverySettled, true);
+  await using _coordinator = await mount(`https://github.com/Effect-TS/effect/commit/${sha}`);
+  await vi.waitFor(() => expect(state.preview).toHaveBeenCalled());
+  expect(state.openScratchProject).not.toHaveBeenCalled();
   expect(useRightPanelStore.getState().byThreadKey).toEqual({});
 });
 

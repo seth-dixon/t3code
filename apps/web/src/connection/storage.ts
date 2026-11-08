@@ -24,6 +24,7 @@ import {
   CredentialStore,
   ProfileStore,
   PullRequestRoutingPermissions,
+  EnvironmentTrustMarks,
   StoredPullRequestRoutingPermission,
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
@@ -711,6 +712,66 @@ const yieldToBrowserTask = Effect.callback<void>((resume) => {
   return Effect.sync(() => port1.close());
 });
 
+const UNTRUSTED_ENVIRONMENT_KEY_PREFIX = "t3code:untrusted-environment:";
+const UNTRUSTED_ENVIRONMENTS_CHANGED = "t3code:untrusted-environments-changed";
+const decodeMarkedEnvironmentId = Schema.decodeOption(EnvironmentId);
+
+/** One key per mark, like routing grants, so a stale tab's catalog save cannot clear one. */
+export function makeBrowserEnvironmentTrustMarks(
+  browser: Pick<Window, "localStorage"> & EventTarget = window,
+) {
+  return EnvironmentTrustMarks.of({
+    read: Effect.try({
+      try: () => {
+        const ids = new Set<EnvironmentId>();
+        const storage = browser.localStorage;
+        for (let index = 0; index < storage.length; index++) {
+          const key = storage.key(index);
+          if (!key?.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) continue;
+          const id = decodeMarkedEnvironmentId(key.slice(UNTRUSTED_ENVIRONMENT_KEY_PREFIX.length));
+          if (Option.isSome(id)) ids.add(id.value);
+        }
+        return ids as ReadonlySet<EnvironmentId>;
+      },
+      catch: (cause) => catalogError("read environment trust from", cause),
+    }),
+    changed: Stream.callback<void>((queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const listener = (event: Event) => {
+            if (event.type === "storage") {
+              const key = (event as StorageEvent).key;
+              if (key !== null && !key.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) return;
+            }
+            Queue.offerUnsafe(queue, undefined);
+          };
+          browser.addEventListener("storage", listener);
+          browser.addEventListener(UNTRUSTED_ENVIRONMENTS_CHANGED, listener);
+          // Covers a change made between the caller's first read and this subscription.
+          Queue.offerUnsafe(queue, undefined);
+          return listener;
+        }),
+        (listener) =>
+          Effect.sync(() => {
+            browser.removeEventListener("storage", listener);
+            browser.removeEventListener(UNTRUSTED_ENVIRONMENTS_CHANGED, listener);
+          }),
+      ).pipe(Effect.asVoid),
+    ),
+    set: Effect.fn("EnvironmentTrustMarks.set")(function (environmentId, trusted) {
+      return Effect.try({
+        try: () => {
+          const key = `${UNTRUSTED_ENVIRONMENT_KEY_PREFIX}${environmentId}`;
+          if (trusted) browser.localStorage.removeItem(key);
+          else browser.localStorage.setItem(key, "1");
+          browser.dispatchEvent(new Event(UNTRUSTED_ENVIRONMENTS_CHANGED));
+        },
+        catch: (cause) => catalogError("save environment trust in", cause),
+      });
+    }),
+  });
+}
+
 export const layer = Layer.effectContext(
   Effect.gen(function* () {
     const { handle: database } = yield* Effect.acquireRelease(
@@ -719,6 +780,7 @@ export const layer = Layer.effectContext(
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const pullRequestRoutingPermissions = makeBrowserPullRequestRoutingPermissions();
+    const environmentTrustMarks = makeBrowserEnvironmentTrustMarks();
     // Remembers each thread row's encoding, so a save only encodes rows that changed.
     const encodeStoredShellSnapshot = makeStoredShellSnapshotEncoder({
       yieldToHost: yieldToBrowserTask,
@@ -1095,6 +1157,7 @@ export const layer = Layer.effectContext(
 
     return Context.make(Persistence.ConnectionTargetStore, targetStore).pipe(
       Context.add(PullRequestRoutingPermissions, pullRequestRoutingPermissions),
+      Context.add(EnvironmentTrustMarks, environmentTrustMarks),
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),
       Context.add(CredentialStore.ConnectionCredentialStore, credentialStore),

@@ -20,6 +20,12 @@ vi.mock(import("pdfjs-dist/build/pdf.worker.min.mjs?url"), () => ({
   default: pdfWorkerUrl,
 }));
 
+// No environment catalog runs here, so trust would fail closed; hostedBrowserSessions.test.ts covers the rule.
+vi.mock(import("~/connection/environmentTrust"), async (original) => ({
+  ...(await original()),
+  useEnvironmentTrusted: () => true,
+}));
+
 vi.mock(import("~/assets/assetUrls"), async (original) => ({
   ...(await original()),
   useAssetUrlRefresh: () => refresh,

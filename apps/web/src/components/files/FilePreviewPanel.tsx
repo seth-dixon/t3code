@@ -121,6 +121,9 @@ import {
 import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
 import { changeFileSaveSession, useFileSaveSession } from "./fileSaveSessions";
 import { revisionedQuery } from "~/state/revisionedQuery";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
+import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
+import { UntrustedContentNotice } from "../chat/UntrustedContentNotice";
 import {
   getOptimisticProjectFileQueryData,
   getProjectFileContents,
@@ -234,6 +237,29 @@ export function WorkspaceBrowserPreview(props: {
   readonly workspaceMutationId: string | null;
 }) {
   const pdf = isPdfPreviewFile(props.absolutePath);
+  const trusted = useEnvironmentTrusted(props.environmentId);
+  // A server can answer a .pdf request with HTML, so PDFs from an untrusted environment stay closed too.
+  if (!trusted) {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+        <UntrustedContentNotice environmentId={props.environmentId} title={props.title} />
+      </div>
+    );
+  }
+  return <TrustedWorkspaceBrowserPreview {...props} pdf={pdf} />;
+}
+
+function TrustedWorkspaceBrowserPreview(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly absolutePath: string;
+  readonly workspaceRoot: string;
+  readonly title: string;
+  readonly workspaceMutationId: string | null;
+  readonly pdf: boolean;
+}) {
+  const { pdf } = props;
   const resource = workspaceAssetResource({
     kind: pdf ? "media-file" : "workspace-file",
     threadRef: props.threadRef,
@@ -1027,6 +1053,7 @@ export default function FilePreviewPanel({
   const wordWrap = wordWrapOverride ?? defaultWordWrap;
   const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   const remoteOpenState = useRemoteOpenState(environmentId);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
@@ -1283,7 +1310,9 @@ export default function FilePreviewPanel({
             </div>
           </ScrollArea>
           {absolutePath &&
-          (environmentId === primaryEnvironmentId || remoteOpenState.mode !== "local-exec") ? (
+          (environmentId === primaryEnvironmentId ||
+            environmentId === hostEnvironmentId ||
+            remoteOpenState.mode !== "local-exec") ? (
             <OpenInPicker
               environmentId={environmentId}
               keybindings={keybindings}
