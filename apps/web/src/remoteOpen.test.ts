@@ -59,17 +59,20 @@ describe("resolveRemoteOpenState", () => {
     expect(resolve(savedLoopback("sandbox-vm", 47731))).toEqual({ mode: "remote-unavailable" });
   });
 
-  it("gives an untrusted environment no editor links, whatever hosts it advertises", () => {
-    expect(
-      resolveRemoteOpenState({
-        target: new RelayConnectionTarget({ environmentId, label: "sol" }),
-        sshTarget: null,
-        isDesktopRenderer: true,
-        remoteOpenTargets: TAILSCALE_TARGETS,
-        trusted: false,
-        hostEnvironmentId: null,
-      }),
-    ).toEqual({ mode: "remote-unavailable", untrusted: true });
+  it("gives an untrusted environment no editor links, whatever hosts or id it advertises", () => {
+    // A server picks the id it advertises, so claiming the desktop's own id changes nothing.
+    for (const hostEnvironmentId of [null, environmentId]) {
+      expect(
+        resolveRemoteOpenState({
+          target: new RelayConnectionTarget({ environmentId, label: "sol" }),
+          sshTarget: null,
+          isDesktopRenderer: true,
+          remoteOpenTargets: TAILSCALE_TARGETS,
+          trusted: false,
+          hostEnvironmentId,
+        }),
+      ).toEqual({ mode: "remote-unavailable", untrusted: true });
+    }
   });
 
   it("uses deep links for a primary target reached over the network", () => {

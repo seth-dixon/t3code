@@ -7,7 +7,7 @@ import { useContext } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { isEnvironmentTrustedIn } from "../connection/environmentTrust";
-import { hostEnvironmentIdAtom, primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { serverEnvironment } from "../state/server";
 
 // Mirrors the freshness window in chooseLoadBalancedEnvironment.
@@ -51,13 +51,10 @@ export function useLoadBalancedEnvironment(
   const registry = useContext(RegistryContext);
   const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
-  const ownEnvironmentIds = [
-    useAtomValue(primaryEnvironmentIdAtom),
-    useAtomValue(hostEnvironmentIdAtom),
-  ];
+  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   // An untrusted environment never receives work this client did not send it on purpose.
   const environmentIds = candidateEnvironmentIds.filter((environmentId) =>
-    isEnvironmentTrustedIn(trust, catalog, ownEnvironmentIds, environmentId),
+    isEnvironmentTrustedIn(trust, catalog, primaryEnvironmentId, environmentId),
   );
   const refresh = (ids: readonly EnvironmentId[]) => {
     for (const environmentId of ids) {
