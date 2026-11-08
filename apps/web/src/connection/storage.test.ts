@@ -1,7 +1,6 @@
 import {
   ConnectionTransientError,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ConnectionCatalogDocument, Persistence } from "@t3tools/client-runtime/platform";
@@ -9,6 +8,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { afterEach, vi } from "vite-plus/test";
@@ -22,7 +22,6 @@ const emptyCatalog = {
   credentials: [],
   remoteDpopTokens: [],
   disabledEnvironmentIds: [],
-  untrustedEnvironmentIds: [],
 } as const;
 const decodeCatalog = Schema.decodeUnknownSync(Schema.fromJsonString(ConnectionCatalogDocument));
 const encodeCatalog = Schema.encodeSync(Schema.fromJsonString(ConnectionCatalogDocument));
@@ -47,40 +46,6 @@ describe("ConnectionStorage.makeCatalogStore", () => {
       expect(quarantined).toEqual(["{not-json"]);
       expect(writes).toHaveLength(1);
       expect(decodeCatalog(writes[0]!)).toEqual(emptyCatalog);
-    }),
-  );
-
-  it.effect("keeps another window's write when this window updates from an older copy", () =>
-    Effect.gen(function* () {
-      const environmentId = EnvironmentId.make("sandbox");
-      let stored: string = encodeCatalog({
-        ...emptyCatalog,
-        targets: [new RelayConnectionTarget({ environmentId, label: "Sandbox" })],
-      });
-      const backend = {
-        read: Effect.sync(() => stored),
-        write: (raw: string) =>
-          Effect.sync(() => {
-            stored = raw;
-          }),
-      };
-      const first = yield* ConnectionStorage.makeCatalogStore(backend);
-      const second = yield* ConnectionStorage.makeCatalogStore(backend);
-      yield* second.read;
-
-      yield* first.update((document) => ({
-        ...document,
-        untrustedEnvironmentIds: [environmentId],
-      }));
-      yield* second.update((document) => ({
-        ...document,
-        disabledEnvironmentIds: [environmentId],
-      }));
-
-      expect(decodeCatalog(stored)).toMatchObject({
-        untrustedEnvironmentIds: [environmentId],
-        disabledEnvironmentIds: [environmentId],
-      });
     }),
   );
 
@@ -319,5 +284,48 @@ describe("browser GitHub routing permissions", () => {
       );
       expect(yield* second.get(entry)).toBe("off");
     }),
+  );
+});
+
+describe("browser environment trust marks", () => {
+  it.effect("shows a mark made in one tab to another tab", () =>
+    Effect.gen(function* () {
+      const values = new Map<string, string>();
+      const localStorage: Storage = {
+        get length() {
+          return values.size;
+        },
+        key: (index) => [...values.keys()][index] ?? null,
+        getItem: (key) => values.get(key) ?? null,
+        setItem: (key, value) => {
+          values.set(key, value);
+        },
+        removeItem: (key) => {
+          values.delete(key);
+        },
+        clear: () => {
+          values.clear();
+        },
+      };
+      const firstTab = Object.assign(new EventTarget(), { localStorage });
+      const secondTab = Object.assign(new EventTarget(), { localStorage });
+      const first = ConnectionStorage.makeBrowserEnvironmentTrustMarks(firstTab);
+      const second = ConnectionStorage.makeBrowserEnvironmentTrustMarks(secondTab);
+      const sandbox = EnvironmentId.make("sandbox");
+      const seen = yield* Queue.unbounded<ReadonlySet<EnvironmentId>>();
+      yield* second.changes.pipe(
+        Stream.runForEach((ids) => Queue.offer(seen, ids)),
+        Effect.forkChild,
+      );
+      expect(yield* Queue.take(seen)).toEqual(new Set());
+
+      yield* first.set(sandbox, false);
+      secondTab.dispatchEvent(Object.assign(new Event("storage"), { key: null }));
+      expect(yield* Queue.take(seen)).toEqual(new Set([sandbox]));
+
+      yield* first.set(sandbox, true);
+      secondTab.dispatchEvent(Object.assign(new Event("storage"), { key: null }));
+      expect(yield* Queue.take(seen)).toEqual(new Set());
+    }).pipe(Effect.scoped),
   );
 });

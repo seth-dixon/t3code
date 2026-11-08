@@ -57,14 +57,18 @@ function parseAssetCollectionKey(
   }
 }
 
-/** Servers mint paths on their own origin; anything else would send this client somewhere the server picked. */
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    const url = new URL(relativeUrl, httpBaseUrl);
-    return url.origin === new URL(httpBaseUrl).origin ? url.toString() : null;
+    return new URL(relativeUrl, httpBaseUrl).toString();
   } catch {
     return null;
   }
+}
+
+/** Servers mint paths on their own origin; an absolute URL would send this client wherever it names. */
+export function originRelativeAssetUrl(relativeUrl: string): string {
+  const url = new URL(relativeUrl, "http://asset.invalid");
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 export const EMPTY_ASSET_URL_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
@@ -257,7 +261,10 @@ export function createAssetEnvironmentAtoms<R, E>(
       limit = Semaphore.makeUnsafe(ASSET_URL_MAX_IN_FLIGHT);
       mintLimits.set(environmentId, limit);
     }
-    return request(WS_METHODS.assetsCreateUrl, input).pipe(limit.withPermit);
+    return request(WS_METHODS.assetsCreateUrl, input).pipe(
+      limit.withPermit,
+      Effect.map((asset) => ({ ...asset, relativeUrl: originRelativeAssetUrl(asset.relativeUrl) })),
+    );
   };
   const execute = Effect.fn("assets.createUrl")(function* (input: AssetCreateUrlInput) {
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;

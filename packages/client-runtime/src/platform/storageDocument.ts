@@ -29,9 +29,6 @@ export const ConnectionCatalogDocument = Schema.Struct({
   disabledEnvironmentIds: Schema.Array(EnvironmentId).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed([])),
   ),
-  untrustedEnvironmentIds: Schema.Array(EnvironmentId).pipe(
-    Schema.withDecodingDefaultKey(Effect.succeed([])),
-  ),
 });
 export type ConnectionCatalogDocument = typeof ConnectionCatalogDocument.Type;
 
@@ -42,7 +39,6 @@ export const EMPTY_CONNECTION_CATALOG_DOCUMENT: ConnectionCatalogDocument = Obje
   credentials: [],
   remoteDpopTokens: [],
   disabledEnvironmentIds: [],
-  untrustedEnvironmentIds: [],
 });
 
 export function replaceCatalogValue<A>(
@@ -132,13 +128,8 @@ export function registerConnectionInCatalog(
   document: ConnectionCatalogDocument,
   registration: ConnectionRegistration,
   routes: ReadonlyArray<PersistedConnectionTarget> = [registration.target],
-  untrusted = false,
 ): ConnectionCatalogDocument {
-  const routed = setRoutesInCatalog(document, registration.target.environmentId, routes);
-  // One write, so a saved connection can never exist without the mark it was added with.
-  const next = untrusted
-    ? setConnectionTrustedInCatalog(routed, registration.target.environmentId, false)
-    : routed;
+  const next = setRoutesInCatalog(document, registration.target.environmentId, routes);
 
   switch (registration._tag) {
     case "RelayConnectionRegistration":
@@ -177,11 +168,6 @@ export function removeConnectionFromCatalog(
       (value) => value,
       environmentId,
     ),
-    untrustedEnvironmentIds: removeCatalogValue(
-      next.untrustedEnvironmentIds,
-      (value) => value,
-      environmentId,
-    ),
     ...(next.githubRoutingPermissions === undefined
       ? {}
       : {
@@ -206,23 +192,6 @@ export function setConnectionEnabledInCatalog(
   return {
     ...document,
     disabledEnvironmentIds: registered && !enabled ? [...without, environmentId] : without,
-  };
-}
-
-export function setConnectionTrustedInCatalog(
-  document: ConnectionCatalogDocument,
-  environmentId: EnvironmentId,
-  trusted: boolean,
-): ConnectionCatalogDocument {
-  const registered = document.targets.some((target) => target.environmentId === environmentId);
-  const without = removeCatalogValue(
-    document.untrustedEnvironmentIds,
-    (value) => value,
-    environmentId,
-  );
-  return {
-    ...document,
-    untrustedEnvironmentIds: registered && !trusted ? [...without, environmentId] : without,
   };
 }
 

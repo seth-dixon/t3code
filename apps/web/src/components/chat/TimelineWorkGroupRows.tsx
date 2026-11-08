@@ -559,6 +559,7 @@ export function LiveWorkEntryTimelineRow({
                 inline
                 text={thoughtLine}
                 cwd={ctx.markdownCwd}
+                environmentId={ctx.activeThreadEnvironmentId}
                 parseRawHtml={false}
                 extraRemarkPlugins={THOUGHT_PREVIEW_PLUGINS}
               />
@@ -580,6 +581,7 @@ export function LiveWorkEntryTimelineRow({
               inline
               text={(row.entry.detail ?? label).slice(0, THOUGHT_PREVIEW_SOURCE_MAX_LENGTH)}
               cwd={ctx.markdownCwd}
+              environmentId={ctx.activeThreadEnvironmentId}
               parseRawHtml={false}
               extraRemarkPlugins={row.active ? THINKING_PREVIEW_PLUGINS : THOUGHT_PREVIEW_PLUGINS}
             />
