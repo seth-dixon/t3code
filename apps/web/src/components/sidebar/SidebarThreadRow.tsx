@@ -562,8 +562,17 @@ function StatusCluster(props: {
       );
     };
     const stop = observeResize(name ? [slot, words, name] : [slot, words], update);
+    // Rows use content-visibility:auto, which pauses resize notifications while offscreen, so
+    // an offscreen row's flag would go stale and pin every visible row in the compact form.
+    const row = slot.closest("[data-thread-item]");
+    const onVisibility = (event: Event) => {
+      if ("skipped" in event && event.skipped) slot.removeAttribute("data-status-overflow");
+      else update();
+    };
+    row?.addEventListener("contentvisibilityautostatechange", onVisibility);
     return () => {
       stop();
+      row?.removeEventListener("contentvisibilityautostatechange", onVisibility);
       slot.removeAttribute("data-status-overflow");
     };
   }, []);
