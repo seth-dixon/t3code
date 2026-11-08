@@ -29,6 +29,7 @@ import {
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   makeRevisionedAssetUrlFamily,
+  resolveAssetUrl,
 } from "./assets.ts";
 
 describe("project favicon URL cache", () => {
@@ -175,6 +176,16 @@ const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
       }
     },
   };
+});
+
+describe("resolveAssetUrl", () => {
+  it("keeps signed paths on the server's origin and refuses any other address", () => {
+    expect(resolveAssetUrl("http://127.0.0.1:47731/", "/api/assets/t/a.png")).toBe(
+      "http://127.0.0.1:47731/api/assets/t/a.png",
+    );
+    expect(resolveAssetUrl("http://127.0.0.1:47731/", "http://127.0.0.1:9/probe")).toBeNull();
+    expect(resolveAssetUrl("http://127.0.0.1:47731/", "//192.168.1.1/admin")).toBeNull();
+  });
 });
 
 describe("asset URL requests", () => {

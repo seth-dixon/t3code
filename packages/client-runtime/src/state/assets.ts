@@ -58,9 +58,11 @@ function parseAssetCollectionKey(
   }
 }
 
+/** Servers mint paths on their own origin; anything else would send this client somewhere the server picked. */
 export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): string | null {
   try {
-    return new URL(relativeUrl, httpBaseUrl).toString();
+    const url = new URL(relativeUrl, httpBaseUrl);
+    return url.origin === new URL(httpBaseUrl).origin ? url.toString() : null;
   } catch {
     return null;
   }

@@ -165,7 +165,25 @@ that choice stable. Choose **Auto balance** again to check current resources, or
 a specific machine to override it. Choosing a branch or worktree also keeps the draft
 on that machine. Existing threads stay where they started. If resource checks are
 unavailable or all eligible machines are full, choose a machine manually to continue.
-Mobile keeps its manual environment selection.
+Mobile keeps its manual environment selection. Untrusted machines are never chosen
+automatically.
+
+### Untrusted machines
+
+Mark a machine untrusted when its agents shouldn't be able to reach the device you're
+using, such as a sandbox VM. Tick **Untrusted** when adding it, or choose
+**Mark as untrusted** from its menu in **Settings → Environments**. On web and desktop,
+for that machine:
+
+- Browser pages open in its server browser, never in this app.
+- **Open in** offers no editor, so it can't open files or links on this device.
+- HTML replies, MCP apps, HTML and PDF files, and images that point at other addresses
+  show a short notice instead.
+- Pull request sharing stays off, and load balancing skips it.
+
+The mark belongs to the machine, so it covers every address it's reached at and stays
+after restarts. It applies only on the device where you set it. Mobile doesn't offer it
+yet.
 
 ### Tailscale HTTPS
 

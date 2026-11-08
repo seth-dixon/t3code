@@ -28,6 +28,18 @@ describe("toolActivityFaviconUrl", () => {
     );
   });
 
+  it("loads only public or inline icons for an untrusted environment", () => {
+    const icon = (pageUrl: string, faviconUrl?: string) =>
+      toolActivityFaviconUrl({ pageUrl, faviconUrl }, "light", 32, true);
+    expect(icon("http://localhost:5173/app")).toBeNull();
+    expect(icon("https://example.com/docs", "http://192.168.1.1/x.png")).toBe(
+      "https://example.com/favicon.ico",
+    );
+    expect(icon("http://10.0.0.2/", "data:image/png;base64,AA==")).toBe(
+      "data:image/png;base64,AA==",
+    );
+  });
+
   it("accepts provider-supplied image URLs but rejects extension URLs", () => {
     expect(
       toolActivityFaviconUrl(

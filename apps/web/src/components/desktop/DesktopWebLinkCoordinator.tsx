@@ -1,3 +1,4 @@
+import { readEnvironmentTrusted } from "~/connection/environmentTrust";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -69,7 +70,13 @@ function threadShowingBrowser(
     if (!session || session.promotedTo) return null;
     threadRef = scopeThreadRef(session.environmentId, session.threadId);
   }
-  if (threadRef === null || !isPreviewAvailableFor(threadRef.environmentId)) return null;
+  // A link from this machine's browser may carry login tokens; an untrusted server never gets it.
+  if (
+    threadRef === null ||
+    !isPreviewAvailableFor(threadRef.environmentId) ||
+    !readEnvironmentTrusted(threadRef.environmentId)
+  )
+    return null;
   if (fileEnvironmentId !== null && threadRef.environmentId !== fileEnvironmentId) return null;
   const surface = selectActiveRightPanelSurface(
     useRightPanelStore.getState().byThreadKey,

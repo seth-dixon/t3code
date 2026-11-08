@@ -10,8 +10,8 @@ export function UntrustedContentNotice(props: {
   const label = useEnvironment(props.environmentId)?.label;
   return (
     <p className="flex min-h-16 items-center justify-center rounded-md border border-dashed px-4 py-3 text-center text-muted-foreground text-xs">
-      {props.title} isn&rsquo;t shown because {label === undefined ? "an environment here" : label}{" "}
-      is marked untrusted.
+      {props.title} isn&rsquo;t shown because {label === undefined ? "its environment" : label}{" "}
+      isn&rsquo;t trusted on this device.
     </p>
   );
 }
