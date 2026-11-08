@@ -245,7 +245,8 @@ export function WorkspaceBrowserPreview(props: {
 }) {
   const pdf = isPdfPreviewFile(props.absolutePath);
   const trusted = useEnvironmentTrusted(props.environmentId);
-  if (!pdf && !trusted) {
+  // A server can answer a .pdf request with HTML, so PDFs from an untrusted environment stay closed too.
+  if (!trusted) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center p-6">
         <UntrustedContentNotice environmentId={props.environmentId} title={props.title} />

@@ -1,5 +1,6 @@
 import { FILL_PREVIEW_VIEWPORT, type ScopedThreadRef } from "@t3tools/contracts";
 import { previewPdfAssetUrl } from "@t3tools/shared/preview";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
 import {
@@ -213,6 +214,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, miniPlayer }: Props) {
 
 function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly tabId: string }) {
   const httpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
+  const environmentTrusted = useEnvironmentTrusted(threadRef.environmentId);
   const { serverEpoch, snapshot, desktopOverlay, serverTab, sourceSize } =
     useBrowserMiniPlayerSource(threadRef, tabId);
   const runtimeTabId = previewRuntimeTabId(threadRef, serverEpoch, tabId);
@@ -260,7 +262,7 @@ function BrowserMiniPlayer({ threadRef, tabId, miniPlayer }: Props & { readonly 
 
   if (!snapshot) return null;
   const pdfUrl =
-    snapshot.navStatus._tag === "Success"
+    snapshot.navStatus._tag === "Success" && environmentTrusted
       ? previewPdfAssetUrl(snapshot.navStatus.url, httpBaseUrl)
       : null;
   const loadFailed = snapshot.navStatus._tag === "LoadFailed" ? snapshot.navStatus : null;

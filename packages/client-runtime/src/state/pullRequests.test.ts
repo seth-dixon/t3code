@@ -293,7 +293,7 @@ it.effect.each([
     }),
 );
 
-it.effect.each(["revoked", "disabled"] as const)(
+it.effect.each(["revoked", "disabled", "marked untrusted"] as const)(
   "rechecks routing after an alternate with a shared probe is %s",
   (change) =>
     Effect.gen(function* () {
@@ -349,6 +349,11 @@ it.effect.each(["revoked", "disabled"] as const)(
       yield* Deferred.await(started);
       yield* Effect.yieldNow;
       if (change === "revoked") trusted = false;
+      else if (change === "marked untrusted")
+        yield* SubscriptionRef.set(
+          environmentRegistry.untrustedEnvironmentIds,
+          new Set([EnvironmentId.make("local-environment")]),
+        );
       else
         yield* SubscriptionRef.update(
           environmentRegistry.entries,
@@ -565,6 +570,7 @@ const makeTestRuntime = Effect.fn("makeTestRuntime")(function* (
             ]),
       ]),
     ),
+    untrustedEnvironmentIds: yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(new Set()),
     run: (environmentId, effect) =>
       Effect.provideService(
         effect,

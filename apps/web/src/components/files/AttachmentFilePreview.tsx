@@ -37,6 +37,8 @@ import { BinaryFilePreview } from "./BinaryFilePreview";
 import { PreviewImage } from "./PreviewImage";
 import { AudioPreview } from "./AudioPreview";
 import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
+import { UntrustedContentNotice } from "../chat/UntrustedContentNotice";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
@@ -124,6 +126,8 @@ export function AttachmentFilePreview(props: {
   const attachmentId =
     props.asset && "attachmentId" in props.asset ? props.asset.attachmentId : undefined;
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
+  // A server can answer a .pdf request with HTML, so PDFs from an untrusted environment stay closed too.
+  const environmentTrusted = useEnvironmentTrusted(props.asset?.environmentId ?? null);
   // useAssetUrlRefresh keys its callback on these objects, so they must stay cached.
   const resource =
     props.asset && "resource" in props.asset
@@ -309,6 +313,7 @@ export function AttachmentFilePreview(props: {
         <ChatMarkdown
           text={maskMarkdownFrontmatter(content.text)}
           cwd={undefined}
+          environmentId={props.file ? undefined : props.asset?.environmentId}
           className="mx-auto max-w-4xl px-6 py-5"
         />
       </ScrollArea>
@@ -336,6 +341,13 @@ export function AttachmentFilePreview(props: {
         sizeBytes={props.sizeBytes}
       />
     </Suspense>
+  ) : (kind === "pdf" || kind === "html") && !props.file && !environmentTrusted ? (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <UntrustedContentNotice
+        environmentId={props.asset?.environmentId ?? null}
+        title={props.name}
+      />
+    </div>
   ) : kind === "pdf" || kind === "html" ? (
     <BrowserDocumentFrame
       src={url}

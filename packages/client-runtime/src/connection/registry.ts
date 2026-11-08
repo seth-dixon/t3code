@@ -620,12 +620,20 @@ export const make = Effect.gen(function* () {
           }
           entry = next.entry;
         }
-        yield* registrations.register(registration, persistedRoutes(entry));
+        const untrusted = options?.untrusted === true;
+        yield* registrations.register(
+          registration,
+          persistedRoutes(entry),
+          untrusted ? { untrusted } : undefined,
+        );
         yield* Ref.update(persistedEnvironmentIds, (current) =>
           new Set(current).add(environmentId),
         );
-        if (options?.untrusted === true) {
-          yield* markUntrustedLocked(environmentId).pipe(
+        if (untrusted) {
+          yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) =>
+            new Set(current).add(environmentId),
+          );
+          yield* pullRequestRoutingPermissions.forget(environmentId).pipe(
             Effect.mapError(
               (error) =>
                 new Persistence.ConnectionPersistenceError({
@@ -701,6 +709,13 @@ export const make = Effect.gen(function* () {
           yield* Ref.update(platformEnvironmentIds, (current) => {
             const next = new Set(current);
             next.add(target.environmentId);
+            return next;
+          });
+          // This client's own backend is the trust anchor; a mark from its saved past no longer applies.
+          yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
+            if (!current.has(target.environmentId)) return current;
+            const next = new Set(current);
+            next.delete(target.environmentId);
             return next;
           });
 

@@ -582,6 +582,8 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
     function* (transform) {
       yield* lock.withPermits(1)(
         Effect.gen(function* () {
+          // Another tab or window may have written since this one cached; never write over that.
+          yield* Ref.set(state, Option.none());
           const next = transform(yield* loadUnlocked());
           yield* backend.write(yield* encodeCatalog(next));
           yield* Ref.set(state, Option.some(next));
@@ -748,9 +750,16 @@ export const layer = Layer.effectContext(
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
-        function (registration, routes) {
+        function (registration, routes, options) {
           return catalog
-            .update((document) => registerConnectionInCatalog(document, registration, routes))
+            .update((document) =>
+              registerConnectionInCatalog(
+                document,
+                registration,
+                routes,
+                options?.untrusted === true,
+              ),
+            )
             .pipe(Effect.mapError((cause) => persistenceError("register-connection", cause)));
         },
       ),
