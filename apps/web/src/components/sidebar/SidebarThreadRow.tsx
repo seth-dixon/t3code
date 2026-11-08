@@ -537,7 +537,7 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
 }
 
 // Rows switch together: any row whose worded status would cut its project name flags its
-// slot, and the whole tree drops the word ("11m Working" becomes "11m"). The worded copy
+// slot, and the whole tree drops the word ("Working 11m" becomes "11m"). The worded copy
 // stays laid out (absolute, so it never pushes the name) to keep measuring whether words fit.
 function StatusCluster(props: {
   icon: keyof typeof TOP_STATUS_ICONS;
@@ -592,8 +592,8 @@ function StatusCluster(props: {
           "absolute right-0 inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:invisible"
         }
       >
-        {props.time}
         {props.label}
+        {props.time}
         <TopStatusIcon icon={props.icon} className="size-4" />
       </span>
     </span>
