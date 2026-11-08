@@ -304,7 +304,6 @@ export function AttachmentFilePreview(props: {
         <ChatMarkdown
           text={maskMarkdownFrontmatter(content.text)}
           cwd={undefined}
-          environmentId={props.file ? undefined : props.asset?.environmentId}
           className="mx-auto max-w-4xl px-6 py-5"
         />
       </ScrollArea>

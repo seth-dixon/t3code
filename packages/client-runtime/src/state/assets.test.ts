@@ -29,7 +29,6 @@ import {
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   makeRevisionedAssetUrlFamily,
-  originRelativeAssetUrl,
 } from "./assets.ts";
 
 describe("project favicon URL cache", () => {
@@ -176,14 +175,6 @@ const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
       }
     },
   };
-});
-
-describe("originRelativeAssetUrl", () => {
-  it("keeps a minted asset on the server's own origin whatever address it names", () => {
-    expect(originRelativeAssetUrl("/api/assets/t/a.png?v=1")).toBe("/api/assets/t/a.png?v=1");
-    expect(originRelativeAssetUrl("http://127.0.0.1:9/probe")).toBe("/probe");
-    expect(originRelativeAssetUrl("//192.168.1.1/admin")).toBe("/admin");
-  });
 });
 
 describe("asset URL requests", () => {

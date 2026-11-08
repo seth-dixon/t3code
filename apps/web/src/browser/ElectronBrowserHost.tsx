@@ -10,7 +10,7 @@ import { type ComponentProps, useState } from "react";
 
 import { environmentCatalog } from "~/connection/catalog";
 import { isEnvironmentTrustedIn, readEnvironmentTrusted } from "~/connection/environmentTrust";
-import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
+import { hostEnvironmentIdAtom, primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
@@ -95,9 +95,10 @@ export function ElectronBrowserHost() {
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
   const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  const hostEnvironmentId = useAtomValue(hostEnvironmentIdAtom);
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
   const sessions = hostedBrowserSessions(previewByThreadKey, primaryEnvironmentId, (id) =>
-    isEnvironmentTrustedIn(trust, catalog, id),
+    isEnvironmentTrustedIn(trust, catalog, [primaryEnvironmentId, hostEnvironmentId], id),
   );
 
   if (!isElectron) return null;

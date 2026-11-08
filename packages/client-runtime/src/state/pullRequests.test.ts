@@ -584,7 +584,9 @@ const makeTestRuntime = Effect.fn("makeTestRuntime")(function* (
             ]),
       ]),
     ),
-    untrustedEnvironmentIds: yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(new Set()),
+    untrustedEnvironmentIds: yield* SubscriptionRef.make<ReadonlySet<EnvironmentId> | null>(
+      new Set(),
+    ),
     run: (environmentId, effect) =>
       Effect.provideService(
         effect,

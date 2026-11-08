@@ -35,7 +35,7 @@ export function* enabledEnvironmentIds(
   }
 }
 
-/** `isReady` stays false until the saved marks load; callers treat that as untrusted. */
+/** `isReady` stays false until the saved marks load or while they can't be read; callers treat that as untrusted. */
 export interface EnvironmentTrustState {
   readonly isReady: boolean;
   readonly untrusted: ReadonlySet<EnvironmentIdType>;
@@ -99,10 +99,8 @@ export function createEnvironmentCatalogAtoms<R, E>(
         return yield* new EnvironmentRegistry.EnvironmentNotRegisteredError({
           environmentId: input.environmentId,
         });
-      if (
-        input.permission !== "off" &&
-        (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(input.environmentId)
-      )
+      const untrusted = yield* SubscriptionRef.get(registry.untrustedEnvironmentIds);
+      if (input.permission !== "off" && (untrusted === null || untrusted.has(input.environmentId)))
         return yield* new ConnectionBlockedError({
           reason: "permission",
           detail: "Pull request routing stays off for an untrusted environment.",
@@ -117,7 +115,9 @@ export function createEnvironmentCatalogAtoms<R, E>(
       EnvironmentRegistry.EnvironmentRegistry.pipe(
         Effect.map((registry) =>
           SubscriptionRef.changes(registry.untrustedEnvironmentIds).pipe(
-            Stream.map((ids): EnvironmentTrustState => ({ isReady: true, untrusted: ids })),
+            Stream.map((ids): EnvironmentTrustState =>
+              ids === null ? EMPTY_ENVIRONMENT_TRUST_STATE : { isReady: true, untrusted: ids },
+            ),
           ),
         ),
       ),

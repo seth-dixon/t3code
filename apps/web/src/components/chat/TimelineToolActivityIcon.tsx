@@ -1,7 +1,6 @@
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { type ToolActivityIcon } from "@t3tools/contracts";
-import { inlineImageUrl, toolActivityFaviconUrl } from "@t3tools/shared/favicon";
-import { useEnvironmentTrusted } from "~/connection/environmentTrust";
+import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { use, useState } from "react";
 import { T3Wordmark } from "../T3Wordmark";
@@ -83,15 +82,13 @@ export function ToolActivityIconView(props: {
   className: string;
   muted: boolean;
 }) {
-  const { resolvedTheme, activeThreadEnvironmentId } = use(TimelineRowCtx);
-  // An untrusted server could point these at this machine's loopback or LAN services.
-  const untrusted = !useEnvironmentTrusted(activeThreadEnvironmentId);
+  const { resolvedTheme } = use(TimelineRowCtx);
   const fallbackClassName = cn(props.className, props.muted && "opacity-70 light:brightness-60");
   if (!props.icon) {
     return <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />;
   }
   if (props.icon._tag === "website") {
-    const src = toolActivityFaviconUrl(props.icon, resolvedTheme, 32, untrusted);
+    const src = toolActivityFaviconUrl(props.icon, resolvedTheme, 32);
     return src ? (
       <ToolActivityImageIcon
         key={src}
@@ -106,14 +103,10 @@ export function ToolActivityIconView(props: {
     );
   }
   if (props.icon._tag === "themed-logo") {
-    const logoUrl =
+    const src =
       resolvedTheme === "dark"
         ? (props.icon.logoUrlDark ?? props.icon.logoUrl)
         : props.icon.logoUrl;
-    const src = untrusted ? inlineImageUrl(logoUrl) : logoUrl;
-    if (src === null) {
-      return <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />;
-    }
     return (
       <ToolActivityImageIcon
         key={src}

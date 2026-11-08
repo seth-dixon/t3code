@@ -426,7 +426,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   inline
                   text={workEntry.detail ?? previewText}
                   cwd={ctx.markdownCwd}
-                  environmentId={ctx.activeThreadEnvironmentId}
                   parseRawHtml={false}
                   extraRemarkPlugins={
                     workEntry.toolLifecycleStatus === "inProgress"

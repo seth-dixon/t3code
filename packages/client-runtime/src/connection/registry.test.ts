@@ -170,6 +170,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
     readonly initialUntrusted?: ReadonlyArray<EnvironmentId>;
     readonly setTrustedFails?: boolean;
+    readonly readTrustFails?: boolean;
     readonly directEndpoints?: ServerConfig["directEndpoints"];
   },
 ) {
@@ -212,7 +213,16 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     new Set(options?.initialUntrusted ?? []),
   );
   const trustMarks = EnvironmentTrustMarks.of({
-    changes: SubscriptionRef.changes(storedUntrusted),
+    read:
+      options?.readTrustFails === true
+        ? Effect.fail(
+            new ConnectionTransientError({
+              reason: "remote-unavailable",
+              detail: "storage unavailable",
+            }),
+          )
+        : SubscriptionRef.get(storedUntrusted),
+    changed: SubscriptionRef.changes(storedUntrusted).pipe(Stream.map(() => undefined)),
     set: (environmentId, trusted) =>
       options?.setTrustedFails === true
         ? Effect.fail(
@@ -1727,11 +1737,11 @@ describe("EnvironmentRegistry", () => {
           expect(hasRoutes(yield* Ref.get(harness.storedTargets), target.environmentId)).toBe(
             false,
           );
-          expect(
-            (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(
-              target.environmentId,
-            ),
-          ).toBe(false);
+          // This client's own backend never counts as marked, even while its old mark stays stored.
+          expect(yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).toEqual(new Set());
+          expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(
+            new Set([target.environmentId]),
+          );
           if (registration._tag === "BearerConnectionRegistration") {
             expect(
               (yield* Ref.get(harness.storedCredentials)).get(registration.target.connectionId),
@@ -2377,7 +2387,7 @@ describe("EnvironmentRegistry routes", () => {
           }),
         );
         expect(
-          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(environmentId),
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
         ).toBe(true);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
 
@@ -2385,7 +2395,7 @@ describe("EnvironmentRegistry routes", () => {
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
         expect(
-          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).has(environmentId),
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
         ).toBe(true);
         yield* registry.setTrusted(environmentId, true);
         expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(new Set());
@@ -2393,9 +2403,34 @@ describe("EnvironmentRegistry routes", () => {
         // Another window marks it again; this registry follows without a restart.
         yield* SubscriptionRef.set(harness.storedUntrusted, new Set([environmentId]));
         yield* SubscriptionRef.changes(registry.untrustedEnvironmentIds).pipe(
-          Stream.filter((ids) => ids.has(environmentId)),
+          Stream.filter((ids) => ids?.has(environmentId) === true),
           Stream.runHead,
         );
+
+        // Removing it leaves the mark, so the environment comes back untrusted, here and in
+        // any other window still holding it.
+        yield* registry.remove(environmentId);
+        expect(yield* SubscriptionRef.get(harness.storedUntrusted)).toEqual(
+          new Set([environmentId]),
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.untrustedEnvironmentIds))?.has(environmentId),
+        ).toBe(true);
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("counts every environment untrusted while the marks can't be read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [LAN_TARGET],
+        [LAN_PROFILE],
+        [[LAN_TARGET.connectionId, BEARER_CREDENTIAL]],
+        { readTrustFails: true },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        expect(yield* SubscriptionRef.get(registry.untrustedEnvironmentIds)).toBeNull();
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

@@ -84,6 +84,7 @@ export function PullRequestRoutingSettings({
             disabled={
               !catalog.isReady ||
               saving ||
+              !trust.isReady ||
               trust.untrusted.has(environment.environmentId) ||
               pullRequestRoutingConnectionKey(environment.entry) === null
             }

@@ -66,12 +66,6 @@ export function resolveAssetUrl(httpBaseUrl: string, relativeUrl: string): strin
   }
 }
 
-/** Servers mint paths on their own origin; an absolute URL would send this client wherever it names. */
-export function originRelativeAssetUrl(relativeUrl: string): string {
-  const url = new URL(relativeUrl, "http://asset.invalid");
-  return `${url.pathname}${url.search}${url.hash}`;
-}
-
 export const EMPTY_ASSET_URL_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
   Atom.withLabel("asset-url:empty"),
 );
@@ -262,10 +256,7 @@ export function createAssetEnvironmentAtoms<R, E>(
       limit = Semaphore.makeUnsafe(ASSET_URL_MAX_IN_FLIGHT);
       mintLimits.set(environmentId, limit);
     }
-    return request(WS_METHODS.assetsCreateUrl, input).pipe(
-      limit.withPermit,
-      Effect.map((asset) => ({ ...asset, relativeUrl: originRelativeAssetUrl(asset.relativeUrl) })),
-    );
+    return request(WS_METHODS.assetsCreateUrl, input).pipe(limit.withPermit);
   };
   const execute = Effect.fn("assets.createUrl")(function* (input: AssetCreateUrlInput) {
     const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;

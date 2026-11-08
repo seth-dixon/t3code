@@ -66,6 +66,7 @@ import { APP_VERSION } from "~/branding";
 import { useManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
+import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import {
   OutdatedServerUpdateAction,
   ServerUpdateAction,
@@ -198,7 +199,9 @@ export function SavedBackendListRow({
   }
   const retryNow = useAtomCommand(environmentCatalog.retryNow);
   const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
-  const untrusted = trust.untrusted.has(environmentId);
+  // The desktop app's own service always counts as trusted, so it offers no mark.
+  const isHost = useAtomValue(hostEnvironmentIdAtom) === environmentId;
+  const untrusted = !isHost && trust.untrusted.has(environmentId);
   const setTrusted = useAtomCommand(environmentCatalog.setTrusted, {
     reportFailure: false,
   });
@@ -442,10 +445,12 @@ export function SavedBackendListRow({
             <RouteIcon />
             {routesOpen ? "Hide routes" : "Routes"}
           </MenuItem>
-          <MenuItem disabled={!trust.isReady} onClick={() => void toggleTrusted()}>
-            <ShieldIcon />
-            {untrusted ? "Mark as trusted" : "Mark as untrusted"}
-          </MenuItem>
+          {isHost ? null : (
+            <MenuItem disabled={!trust.isReady} onClick={() => void toggleTrusted()}>
+              <ShieldIcon />
+              {untrusted ? "Mark as trusted" : "Mark as untrusted"}
+            </MenuItem>
+          )}
           {mcpUrl ? (
             <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>
           ) : null}
