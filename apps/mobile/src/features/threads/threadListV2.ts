@@ -318,6 +318,8 @@ export interface ThreadListV2Item {
   readonly variant: "card" | "slim";
   readonly snoozed: boolean;
   readonly pinned: boolean;
+  /** Listed under the Working shelf header, which already names the status. */
+  readonly inWorkingShelf: boolean;
   readonly wokeAt: string | null;
   readonly isLast: boolean;
 }
@@ -745,6 +747,7 @@ export function buildThreadListV2Items(input: {
         variant: slim.has(thread) ? "slim" : "card",
         snoozed: snoozedThreads.has(thread),
         pinned: pinnedThreads.has(thread),
+        inWorkingShelf: false,
         wokeAt: slim.has(thread) ? null : resolveThreadListV2WokeAt(thread, { now }),
         isLast: index === results.length - 1,
       })),
@@ -818,6 +821,7 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: true,
+      inWorkingShelf: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       isLast: false,
     });
@@ -828,6 +832,7 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: false,
+      inWorkingShelf: false,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       isLast: false,
     });
@@ -839,6 +844,7 @@ export function buildThreadListV2Items(input: {
       variant: "card",
       snoozed: false,
       pinned: false,
+      inWorkingShelf: true,
       wokeAt: resolveThreadListV2WokeAt(thread, { now }),
       isLast: false,
     });
@@ -850,6 +856,7 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: true,
       pinned: false,
+      inWorkingShelf: false,
       wokeAt: null,
       isLast: false,
     });
@@ -861,6 +868,7 @@ export function buildThreadListV2Items(input: {
       variant: "slim",
       snoozed: false,
       pinned: false,
+      inWorkingShelf: false,
       wokeAt: null,
       isLast: false,
     });

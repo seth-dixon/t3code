@@ -1623,6 +1623,12 @@ describe("Working section beta", () => {
     const off = build({ workingShelfEnabled: false });
     expect(ids(off)).toContain("working");
     expect(off.workingCount).toBe(0);
+
+    const shelfRows = (layout: ReturnType<typeof buildThreadListV2Items>) =>
+      layout.items.filter((item) => item.inWorkingShelf).map((item) => item.thread.id);
+    expect(shelfRows(build({ workingShelfExpanded: true }))).toEqual(["working"]);
+    expect(shelfRows(off)).toEqual([]);
+    expect(shelfRows(build({ workingShelfExpanded: true, searchQuery: "working" }))).toEqual([]);
   });
 
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {

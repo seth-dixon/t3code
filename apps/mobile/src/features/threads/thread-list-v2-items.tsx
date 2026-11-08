@@ -139,11 +139,15 @@ const DONE_STATUS_LABEL: StatusLabel = {
   iconTintClassName: "accent-adaptive-emerald-700-300",
 };
 
-function ThreadListV2Duration(props: { readonly startedAt: string | null }) {
+function ThreadListV2Duration(props: {
+  readonly startedAt: string | null;
+  readonly leadingSpace?: boolean;
+}) {
   const startedAtMs = Date.parse(props.startedAt ?? "");
   const nowMs = useVisibleSecondClock(Number.isFinite(startedAtMs));
   if (!Number.isFinite(startedAtMs)) return null;
-  return ` ${formatWorkingDurationLabel(nowMs - startedAtMs)}`;
+  const label = formatWorkingDurationLabel(nowMs - startedAtMs);
+  return props.leadingSpace === false ? label : ` ${label}`;
 }
 
 const CARD_MENU_ACTIONS: MenuAction[] = [
@@ -626,6 +630,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   readonly hasQueuedMessages?: boolean;
   readonly snoozed?: boolean;
   readonly pinned?: boolean;
+  readonly inWorkingShelf?: boolean;
   readonly wokeAt: string | null;
   readonly snoozeWakeLabelText?: string;
   readonly timeLabel: string;
@@ -743,6 +748,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     (status === "working" && workingLabel !== undefined && thread.goal?.status === "active"
       ? { ...workingLabel, label: "Goal" }
       : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
+  // The Working shelf header already names the status, so its rows show only the time.
+  const hidesWorkingLabel = props.inWorkingShelf === true && statusLabel?.label === "Working";
   const recede = shouldRecedeThreadRow({ status, selected });
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const rowAccessibilityLabel = `${thread.title}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
@@ -1200,9 +1207,12 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   selected ? selectedThreadRowColors.foregroundClassName : statusLabel.className,
                 )}
               >
-                {statusLabel.label}
+                {hidesWorkingLabel ? null : statusLabel.label}
                 {status === "working" ? (
-                  <ThreadListV2Duration startedAt={resolveThreadWorkingStartedAt(thread)} />
+                  <ThreadListV2Duration
+                    startedAt={resolveThreadWorkingStartedAt(thread)}
+                    leadingSpace={!hidesWorkingLabel}
+                  />
                 ) : status === "waiting" ? (
                   <ThreadListV2Duration startedAt={thread.latestRun?.completedAt ?? null} />
                 ) : null}
