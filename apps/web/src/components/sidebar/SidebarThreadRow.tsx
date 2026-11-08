@@ -537,8 +537,8 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
 }
 
 // Rows switch together: any row whose worded status would cut its project name flags its
-// slot, and the whole tree then shows "time icon". The worded copy stays laid out (absolute,
-// so it never pushes the name) to keep measuring whether words fit again.
+// slot, and the whole tree drops the word ("11m Working" becomes "11m"). The worded copy
+// stays laid out (absolute, so it never pushes the name) to keep measuring whether words fit.
 function StatusCluster(props: {
   icon: keyof typeof TOP_STATUS_ICONS;
   label: string;
@@ -592,9 +592,9 @@ function StatusCluster(props: {
           "absolute right-0 inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:invisible"
         }
       >
-        <TopStatusIcon icon={props.icon} className="size-4" />
-        {props.label}
         {props.time}
+        {props.label}
+        <TopStatusIcon icon={props.icon} className="size-4" />
       </span>
     </span>
   );
@@ -1342,13 +1342,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                       <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
                         {/* The clock tells a wake time from an age at a glance. */}
-                        <AlarmClockIcon
-                          aria-hidden
-                          className={
-                            "size-3 group-has-[[data-status-overflow]]/sidebar-tree:order-last"
-                          }
-                        />
                         {props.snoozeWakeLabelText}
+                        <AlarmClockIcon aria-hidden className="size-3" />
                       </span>
                     ) : (inFolder ? isWokeStatus : isWoke) ? (
                       <Tooltip>
