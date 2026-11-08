@@ -536,9 +536,10 @@ function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: 
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
 }
 
-// Rows switch together: any row whose worded status would cut its project name flags its
-// slot, and the whole tree drops the word ("Working 11m" becomes "11m"). The worded copy
-// stays laid out (absolute, so it never pushes the name) to keep measuring whether words fit.
+// Rows switch together: any row whose worded status would cut its project name (or a long
+// name below about 14 characters) flags its slot, and the whole tree drops the word
+// ("Working 11m" becomes "11m"). The hidden copy stays laid out (absolute) so the worded one
+// keeps measuring whether words fit again.
 function StatusCluster(props: {
   icon: keyof typeof TOP_STATUS_ICONS;
   label: string;
@@ -552,14 +553,14 @@ function StatusCluster(props: {
     if (!words || !slot) return;
     const name = slot.parentElement?.querySelector<HTMLElement>("[data-project-name]") ?? null;
     const update = () => {
-      // Space the name gives up by truncating still belongs to it, so hover controls that
-      // widen the slot cannot flip the sidebar.
-      const nameDeficit = name ? name.scrollWidth - name.clientWidth : 0;
-      const room = slot.clientWidth - nameDeficit;
-      slot.toggleAttribute(
-        "data-status-overflow",
-        slot.clientWidth > 0 && words.offsetWidth > room,
-      );
+      if (slot.clientWidth === 0) return slot.removeAttribute("data-status-overflow");
+      // Name and slot share the line, so hover controls that widen the slot don't change it.
+      const line = (name?.clientWidth ?? 0) + slot.clientWidth;
+      const nameWithWords = line - words.offsetWidth;
+      const natural = name?.scrollWidth ?? 0;
+      // About 14 characters: a long name may shorten to this before words give way.
+      const minimum = name ? parseFloat(getComputedStyle(name).fontSize) * 7 : 0;
+      slot.toggleAttribute("data-status-overflow", nameWithWords < Math.min(natural, minimum));
     };
     const stop = observeResize(name ? [slot, words, name] : [slot, words], update);
     // Rows use content-visibility:auto, which pauses resize notifications while offscreen, so
@@ -580,7 +581,7 @@ function StatusCluster(props: {
     <span className="relative flex items-center justify-end">
       <span
         className={
-          "invisible inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:visible"
+          "invisible absolute right-0 inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:visible group-has-[[data-status-overflow]]/sidebar-tree:static"
         }
       >
         {props.time}
@@ -589,7 +590,7 @@ function StatusCluster(props: {
       <span
         ref={wordsRef}
         className={
-          "absolute right-0 inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:invisible"
+          "inline-flex items-center gap-1 group-has-[[data-status-overflow]]/sidebar-tree:invisible group-has-[[data-status-overflow]]/sidebar-tree:absolute group-has-[[data-status-overflow]]/sidebar-tree:right-0"
         }
       >
         {props.label}
