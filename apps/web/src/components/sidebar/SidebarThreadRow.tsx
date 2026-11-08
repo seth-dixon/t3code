@@ -36,6 +36,7 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
+  TargetIcon,
   CircleDotDashedIcon,
   ClockIcon,
   GitBranchIcon,
@@ -518,6 +519,7 @@ const dropVerbBadge: Record<SidebarDropVerb, ReactNode> = {
 
 const TOP_STATUS_ICONS = {
   working: CircleDashedIcon,
+  goal: TargetIcon,
   waiting: CircleDotDashedIcon,
   input: MessageCircleQuestionIcon,
   request: UserRoundIcon,
@@ -735,11 +737,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   });
   const topStatus =
     status === "working"
-      ? {
-          label: thread.goal?.status === "active" ? "Goal" : "Working",
-          icon: "working" as const,
-          className: "text-info-foreground",
-        }
+      ? thread.goal?.status === "active"
+        ? { label: "Goal", icon: "goal" as const, className: "text-info-foreground" }
+        : { label: "Working", icon: "working" as const, className: "text-info-foreground" }
       : status === "waiting"
         ? {
             label: "Waiting",
