@@ -29,6 +29,9 @@ export const ConnectionCatalogDocument = Schema.Struct({
   disabledEnvironmentIds: Schema.Array(EnvironmentId).pipe(
     Schema.withDecodingDefaultKey(Effect.succeed([])),
   ),
+  untrustedEnvironmentIds: Schema.Array(EnvironmentId).pipe(
+    Schema.withDecodingDefaultKey(Effect.succeed([])),
+  ),
 });
 export type ConnectionCatalogDocument = typeof ConnectionCatalogDocument.Type;
 
@@ -39,6 +42,7 @@ export const EMPTY_CONNECTION_CATALOG_DOCUMENT: ConnectionCatalogDocument = Obje
   credentials: [],
   remoteDpopTokens: [],
   disabledEnvironmentIds: [],
+  untrustedEnvironmentIds: [],
 });
 
 export function replaceCatalogValue<A>(
@@ -168,6 +172,11 @@ export function removeConnectionFromCatalog(
       (value) => value,
       environmentId,
     ),
+    untrustedEnvironmentIds: removeCatalogValue(
+      next.untrustedEnvironmentIds,
+      (value) => value,
+      environmentId,
+    ),
     ...(next.githubRoutingPermissions === undefined
       ? {}
       : {
@@ -192,6 +201,23 @@ export function setConnectionEnabledInCatalog(
   return {
     ...document,
     disabledEnvironmentIds: registered && !enabled ? [...without, environmentId] : without,
+  };
+}
+
+export function setConnectionTrustedInCatalog(
+  document: ConnectionCatalogDocument,
+  environmentId: EnvironmentId,
+  trusted: boolean,
+): ConnectionCatalogDocument {
+  const registered = document.targets.some((target) => target.environmentId === environmentId);
+  const without = removeCatalogValue(
+    document.untrustedEnvironmentIds,
+    (value) => value,
+    environmentId,
+  );
+  return {
+    ...document,
+    untrustedEnvironmentIds: registered && !trusted ? [...without, environmentId] : without,
   };
 }
 

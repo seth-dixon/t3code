@@ -41,6 +41,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { AnimatedHeight } from "../AnimatedHeight";
 import { environmentCatalog } from "~/connection/catalog";
 import {
@@ -110,6 +111,8 @@ export function AddEnvironmentDialog({
     return keys;
   })();
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
+  const [untrusted, setUntrusted] = useState(false);
+  const untrustedInput = !routeTarget && untrusted ? { untrusted: true } : {};
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
@@ -167,6 +170,7 @@ export function AddEnvironmentDialog({
       target,
       label: "",
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
+      ...untrustedInput,
     });
     if (result._tag === "Failure") {
       if (session === savedBackendSessionRef.current && !isAtomCommandInterrupted(result)) {
@@ -230,6 +234,7 @@ export function AddEnvironmentDialog({
     const result = await connectPairing({
       ...remotePairingInput,
       ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
+      ...untrustedInput,
     });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
@@ -651,6 +656,19 @@ export function AddEnvironmentDialog({
                   })
                 : null}
             </div>
+            {routeTarget ? null : (
+              <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={untrusted}
+                  disabled={isAddingSavedBackend}
+                  onCheckedChange={(checked) => setUntrusted(checked === true)}
+                />
+                <span>
+                  <span className="font-medium text-foreground">Untrusted</span>: its pages, editor
+                  links, and pull request sharing can&rsquo;t reach this machine.
+                </span>
+              </label>
+            )}
             <AnimatedHeight>
               {savedBackendMode === "ssh" ? renderSshFields() : renderRemoteModeBody()}
             </AnimatedHeight>

@@ -39,12 +39,14 @@ export interface PairingConnectionInput {
   readonly host?: string;
   readonly pairingCode?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
+  readonly untrusted?: boolean;
 }
 
 export interface SshConnectionInput {
   readonly target: DesktopSshEnvironmentTarget;
   readonly label?: string;
   readonly expectedEnvironmentId?: EnvironmentId;
+  readonly untrusted?: boolean;
 }
 
 export interface BearerConnectionUpdateInput {
@@ -158,7 +160,12 @@ const registerPairingConnection = Effect.fn(
   const registration = yield* preparePairingRegistration(input);
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const knownAddressOnly = input.expectedEnvironmentId === undefined;
-  if (!(yield* registry.register(registration, { knownAddressOnly }))) {
+  if (
+    !(yield* registry.register(registration, {
+      knownAddressOnly,
+      ...(input.untrusted === true ? { untrusted: true } : {}),
+    }))
+  ) {
     return registration.target.environmentId;
   }
   yield* registry.setCompatibility(registration.target.environmentId, null);
@@ -293,7 +300,7 @@ const registerSshConnection = Effect.fn(
     return yield* differentMachineError(registration.target.label);
   }
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
-  yield* registry.register(registration);
+  yield* registry.register(registration, input.untrusted === true ? { untrusted: true } : {});
   return registration.target.environmentId;
 });
 

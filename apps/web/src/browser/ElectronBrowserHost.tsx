@@ -1,25 +1,21 @@
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthPreviewOperateScope,
   type DesktopPreviewBridge,
   type DesktopPreviewOpenLinkEvent,
-  type EnvironmentId,
   FILL_PREVIEW_VIEWPORT,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { type ComponentProps, useState } from "react";
 
+import { environmentCatalog } from "~/connection/catalog";
+import { isEnvironmentTrustedIn, readEnvironmentTrusted } from "~/connection/environmentTrust";
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { isElectron } from "~/env";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
 import { useDesktopHostedPreviewSessions } from "~/components/preview/usePreviewSession";
-import {
-  readActivePreviewSessions,
-  type ThreadPreviewState,
-  useActivePreviewSessions,
-} from "~/previewStateStore";
+import { readActivePreviewSessions, useActivePreviewSessions } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { previewEnvironment } from "~/state/preview";
 import { useEnvironmentScope } from "~/state/session";
@@ -29,39 +25,7 @@ import { useBrowserDefaults } from "./browserDefaults";
 import { useBrowserPointerStore } from "./browserPointerStore";
 import { HostedBrowserWebview } from "./HostedBrowserWebview";
 import { openUrlInPreview } from "./openFileInPreview";
-import { rendersServerTabNatively } from "./previewRuntime";
-import { previewRuntimeTabId } from "./previewRuntimeTabId";
-
-/** Every session this window renders as a hosted webview, in a fixed (non-display) order. */
-function hostedBrowserSessions(
-  previewByThreadKey: Record<string, ThreadPreviewState>,
-  primaryEnvironmentId: EnvironmentId | null,
-) {
-  const activeSessions = Object.entries(previewByThreadKey).flatMap(([threadKey, previewState]) => {
-    const threadRef = parseScopedThreadKey(threadKey);
-    return threadRef
-      ? Object.values(previewState.sessions)
-          .filter(
-            (snapshot) =>
-              snapshot.runtime !== "server" ||
-              rendersServerTabNatively(threadRef.environmentId, primaryEnvironmentId, snapshot),
-          )
-          .map((snapshot) => ({
-            threadRef,
-            snapshot,
-            runtimeTabId: previewRuntimeTabId(threadRef, previewState.serverEpoch, snapshot.tabId),
-            pictureInPicture:
-              previewState.desktopByTabId[snapshot.tabId]?.pictureInPicture ?? false,
-            zoomFactor: previewState.desktopByTabId[snapshot.tabId]?.zoomFactor ?? 1,
-          }))
-      : [];
-  });
-  // Electron destroys a moved webview's guest, so the render order must not follow the server's
-  // updatedAt order. Any fixed order works; this one is not a display order.
-  return activeSessions.toSorted((left, right) =>
-    left.runtimeTabId < right.runtimeTabId ? -1 : left.runtimeTabId > right.runtimeTabId ? 1 : 0,
-  );
-}
+import { hostedBrowserSessions } from "./hostedBrowserSessions";
 
 function startAnnotationThemeSync(preview: DesktopPreviewBridge): () => void {
   let lastSerializedTheme = "";
@@ -98,6 +62,7 @@ function openLinkInPreview({ tabId, url, background }: DesktopPreviewOpenLinkEve
   const source = hostedBrowserSessions(
     readActivePreviewSessions(),
     appAtomRegistry.get(primaryEnvironmentIdAtom),
+    readEnvironmentTrusted,
   ).find((session) => session.runtimeTabId === tabId);
   if (!source) return;
   void openUrlInPreview({
@@ -128,8 +93,12 @@ export function startElectronBrowserHost(): () => void {
 export function ElectronBrowserHost() {
   const previewByThreadKey = useActivePreviewSessions();
   const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
+  const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   useDesktopHostedPreviewSessions(primaryEnvironmentId);
-  const sessions = hostedBrowserSessions(previewByThreadKey, primaryEnvironmentId);
+  const sessions = hostedBrowserSessions(previewByThreadKey, primaryEnvironmentId, (id) =>
+    isEnvironmentTrustedIn(trust, catalog, id),
+  );
 
   if (!isElectron) return null;
   return (

@@ -1,4 +1,5 @@
 import {
+  BearerConnectionTarget,
   PrimaryConnectionTarget,
   RelayConnectionTarget,
   SshConnectionTarget,
@@ -30,9 +31,44 @@ describe("resolveRemoteOpenState", () => {
         target: primaryTarget("http://127.0.0.1:8000"),
         sshTarget: null,
         isDesktopRenderer: false,
+        trusted: true,
+        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "local-exec" });
+  });
+
+  it("opens locally only for the desktop's own server, never a loopback look-alike", () => {
+    const savedLoopback = (id: string, port: number) =>
+      new BearerConnectionTarget({
+        environmentId: EnvironmentId.make(id),
+        label: id,
+        connectionId: `bearer:http://127.0.0.1:${port}`,
+      });
+    const resolve = (target: BearerConnectionTarget) =>
+      resolveRemoteOpenState({
+        target,
+        sshTarget: null,
+        isDesktopRenderer: true,
+        remoteOpenTargets: undefined,
+        trusted: true,
+        hostEnvironmentId: "desktop-home",
+      });
+    expect(resolve(savedLoopback("desktop-home", 3780))).toEqual({ mode: "local-exec" });
+    expect(resolve(savedLoopback("sandbox-vm", 47731))).toEqual({ mode: "remote-unavailable" });
+  });
+
+  it("gives an untrusted environment no editor links, whatever hosts it advertises", () => {
+    expect(
+      resolveRemoteOpenState({
+        target: new RelayConnectionTarget({ environmentId, label: "sol" }),
+        sshTarget: null,
+        isDesktopRenderer: true,
+        remoteOpenTargets: TAILSCALE_TARGETS,
+        trusted: false,
+        hostEnvironmentId: null,
+      }),
+    ).toEqual({ mode: "remote-unavailable", untrusted: true });
   });
 
   it("uses deep links for a primary target reached over the network", () => {
@@ -41,6 +77,8 @@ describe("resolveRemoteOpenState", () => {
         target: primaryTarget("https://sol.tail1234.ts.net"),
         sshTarget: null,
         isDesktopRenderer: false,
+        trusted: true,
+        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({
@@ -56,6 +94,8 @@ describe("resolveRemoteOpenState", () => {
         target: primaryTarget("http://172.29.112.1:14369"),
         sshTarget: null,
         isDesktopRenderer: true,
+        trusted: true,
+        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "local-exec" });
@@ -66,6 +106,8 @@ describe("resolveRemoteOpenState", () => {
       target: new SshConnectionTarget({ environmentId, label: "sol", connectionId: "ssh-1" }),
       sshTarget: { alias: "sol", username: null },
       isDesktopRenderer: true,
+      trusted: true,
+      hostEnvironmentId: null,
       remoteOpenTargets: [
         { kind: "tailscale", host: "sol.tail1234.ts.net", username: "server-user" },
       ],
@@ -96,6 +138,8 @@ describe("resolveRemoteOpenState", () => {
       target: new SshConnectionTarget({ environmentId, label: "server", connectionId: "ssh-1" }),
       sshTarget,
       isDesktopRenderer: true,
+      trusted: true,
+      hostEnvironmentId: null,
       remoteOpenTargets: TAILSCALE_TARGETS,
     });
     expect(state.mode).toBe("remote-links");
@@ -118,6 +162,8 @@ describe("resolveRemoteOpenState", () => {
       target: new RelayConnectionTarget({ environmentId, label: "server" }),
       sshTarget: null,
       isDesktopRenderer: false,
+      trusted: true,
+      hostEnvironmentId: null,
       remoteOpenTargets: [
         { kind: "tailscale", host: "server.tail1234.ts.net", username: "admin-user" },
       ],
@@ -136,6 +182,8 @@ describe("resolveRemoteOpenState", () => {
           target: new RelayConnectionTarget({ environmentId, label: "sol" }),
           sshTarget: null,
           isDesktopRenderer: false,
+          trusted: true,
+          hostEnvironmentId: null,
           remoteOpenTargets,
         }),
       ).toEqual({ mode: "remote-unavailable" });

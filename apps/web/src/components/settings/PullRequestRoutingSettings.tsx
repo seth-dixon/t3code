@@ -46,6 +46,7 @@ export function PullRequestRoutingSettings({
 }) {
   const permissions = useAtomValue(environmentCatalog.pullRequestRoutingPermissionsValueAtom);
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
+  const trust = useAtomValue(environmentCatalog.untrustedEnvironmentIdsValueAtom);
   const update = useAtomCommand(environmentCatalog.setPullRequestRoutingPermission);
   const [saving, setSaving] = useState(false);
 
@@ -83,6 +84,7 @@ export function PullRequestRoutingSettings({
             disabled={
               !catalog.isReady ||
               saving ||
+              trust.untrusted.has(environment.environmentId) ||
               pullRequestRoutingConnectionKey(environment.entry) === null
             }
             onValueChange={(permission) => {

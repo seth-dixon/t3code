@@ -290,7 +290,9 @@ export const OpenInPicker = memo(function OpenInPicker({
     <>
       {remote.mode === "remote-unavailable" ? (
         <MenuItem density={presentation === "menu" ? "touch" : "default"} disabled>
-          No SSH route to {environmentLabel}
+          {remote.untrusted
+            ? `${environmentLabel} is marked untrusted`
+            : `No SSH route to ${environmentLabel}`}
         </MenuItem>
       ) : (
         <>

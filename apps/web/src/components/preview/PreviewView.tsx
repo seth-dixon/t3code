@@ -42,6 +42,7 @@ import {
   useThreadPreviewState,
 } from "~/previewStateStore";
 import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
+import { useEnvironmentTrusted } from "~/connection/environmentTrust";
 import { useEnvironmentSupportsServerBrowser } from "~/state/entities";
 import {
   useEnvironment,
@@ -178,6 +179,7 @@ export function PreviewView({
   const environmentLabel = useEnvironment(threadRef.environmentId)?.label ?? "the environment";
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const serverBrowser = useEnvironmentSupportsServerBrowser(threadRef.environmentId);
+  const environmentTrusted = useEnvironmentTrusted(threadRef.environmentId);
   const adjust = useAtomCommand(previewEnvironment.adjust, "preview appearance or zoom");
 
   usePreviewSession(threadRef);
@@ -1020,7 +1022,13 @@ export function PreviewView({
             </div>
           </>
         ) : runtimeTabId && snapshot && !showEmptyState ? (
-          previewBridge ? (
+          !environmentTrusted ? (
+            <div className="flex h-full items-center justify-center p-8 text-center">
+              <p className="max-w-sm text-sm text-muted-foreground">
+                {environmentLabel} is marked untrusted, so its pages don&rsquo;t open in this app.
+              </p>
+            </div>
+          ) : previewBridge ? (
             <BrowserSurfaceSlot
               key={runtimeTabId}
               tabId={runtimeTabId}
