@@ -11,7 +11,6 @@ import {
   removeCatalogValue,
   removeConnectionFromCatalog,
   setConnectionEnabledInCatalog,
-  setConnectionTrustedInCatalog,
   setRoutesInCatalog,
   replaceCatalogValue,
   Persistence,
@@ -26,6 +25,7 @@ import {
   CredentialStore,
   ProfileStore,
   PullRequestRoutingPermissions,
+  EnvironmentTrustMarks,
   StoredPullRequestRoutingPermission,
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
@@ -105,12 +105,10 @@ function persistenceError(
   operation:
     | "list-targets"
     | "list-disabled-targets"
-    | "list-untrusted-targets"
     | "register-connection"
     | "set-connection-routes"
     | "remove-connection"
     | "set-connection-enabled"
-    | "set-connection-trusted"
     | "load-shell"
     | "save-shell"
     | "load-thread"
@@ -582,8 +580,6 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
     function* (transform) {
       yield* lock.withPermits(1)(
         Effect.gen(function* () {
-          // Another tab or window may have written since this one cached; never write over that.
-          yield* Ref.set(state, Option.none());
           const next = transform(yield* loadUnlocked());
           yield* backend.write(yield* encodeCatalog(next));
           yield* Ref.set(state, Option.some(next));
@@ -716,6 +712,65 @@ const yieldToBrowserTask = Effect.callback<void>((resume) => {
   return Effect.sync(() => port1.close());
 });
 
+const UNTRUSTED_ENVIRONMENT_KEY_PREFIX = "t3code:untrusted-environment:";
+const UNTRUSTED_ENVIRONMENTS_CHANGED = "t3code:untrusted-environments-changed";
+
+/** One key per mark, like routing grants, so a stale tab's catalog save cannot clear one. */
+export function makeBrowserEnvironmentTrustMarks(
+  browser: Pick<Window, "localStorage"> & EventTarget = window,
+) {
+  const readAll = (): ReadonlySet<EnvironmentId> => {
+    const ids = new Set<EnvironmentId>();
+    try {
+      const storage = browser.localStorage;
+      for (let index = 0; index < storage.length; index++) {
+        const key = storage.key(index);
+        if (key?.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) {
+          ids.add(EnvironmentId.make(key.slice(UNTRUSTED_ENVIRONMENT_KEY_PREFIX.length)));
+        }
+      }
+    } catch {
+      // Unreadable storage keeps no marks; trust still needs a saved, loaded environment.
+    }
+    return ids;
+  };
+  return EnvironmentTrustMarks.of({
+    changes: Stream.callback<ReadonlySet<EnvironmentId>>((queue) =>
+      Effect.acquireRelease(
+        Effect.sync(() => {
+          const listener = (event: Event) => {
+            if (event.type === "storage") {
+              const key = (event as StorageEvent).key;
+              if (key !== null && !key.startsWith(UNTRUSTED_ENVIRONMENT_KEY_PREFIX)) return;
+            }
+            Queue.offerUnsafe(queue, readAll());
+          };
+          browser.addEventListener("storage", listener);
+          browser.addEventListener(UNTRUSTED_ENVIRONMENTS_CHANGED, listener);
+          Queue.offerUnsafe(queue, readAll());
+          return listener;
+        }),
+        (listener) =>
+          Effect.sync(() => {
+            browser.removeEventListener("storage", listener);
+            browser.removeEventListener(UNTRUSTED_ENVIRONMENTS_CHANGED, listener);
+          }),
+      ).pipe(Effect.asVoid),
+    ),
+    set: Effect.fn("EnvironmentTrustMarks.set")(function (environmentId, trusted) {
+      return Effect.try({
+        try: () => {
+          const key = `${UNTRUSTED_ENVIRONMENT_KEY_PREFIX}${environmentId}`;
+          if (trusted) browser.localStorage.removeItem(key);
+          else browser.localStorage.setItem(key, "1");
+          browser.dispatchEvent(new Event(UNTRUSTED_ENVIRONMENTS_CHANGED));
+        },
+        catch: (cause) => catalogError("save environment trust in", cause),
+      });
+    }),
+  });
+}
+
 export const layer = Layer.effectContext(
   Effect.gen(function* () {
     const { handle: database } = yield* Effect.acquireRelease(
@@ -724,6 +779,7 @@ export const layer = Layer.effectContext(
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const pullRequestRoutingPermissions = makeBrowserPullRequestRoutingPermissions();
+    const environmentTrustMarks = makeBrowserEnvironmentTrustMarks();
     // Remembers each thread row's encoding, so a save only encodes rows that changed.
     const encodeStoredShellSnapshot = makeStoredShellSnapshotEncoder({
       yieldToHost: yieldToBrowserTask,
@@ -743,23 +799,12 @@ export const layer = Layer.effectContext(
         Effect.map((document) => document.disabledEnvironmentIds),
         Effect.mapError((cause) => persistenceError("list-disabled-targets", cause)),
       ),
-      listUntrusted: catalog.read.pipe(
-        Effect.map((document) => document.untrustedEnvironmentIds),
-        Effect.mapError((cause) => persistenceError("list-untrusted-targets", cause)),
-      ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
-        function (registration, routes, options) {
+        function (registration, routes) {
           return catalog
-            .update((document) =>
-              registerConnectionInCatalog(
-                document,
-                registration,
-                routes,
-                options?.untrusted === true,
-              ),
-            )
+            .update((document) => registerConnectionInCatalog(document, registration, routes))
             .pipe(Effect.mapError((cause) => persistenceError("register-connection", cause)));
         },
       ),
@@ -780,13 +825,6 @@ export const layer = Layer.effectContext(
           return catalog
             .update((document) => setConnectionEnabledInCatalog(document, environmentId, enabled))
             .pipe(Effect.mapError((cause) => persistenceError("set-connection-enabled", cause)));
-        },
-      ),
-      setTrusted: Effect.fn("Persistence.ConnectionRegistrationStore.setTrusted")(
-        function (environmentId, trusted) {
-          return catalog
-            .update((document) => setConnectionTrustedInCatalog(document, environmentId, trusted))
-            .pipe(Effect.mapError((cause) => persistenceError("set-connection-trusted", cause)));
         },
       ),
     });
@@ -1131,6 +1169,7 @@ export const layer = Layer.effectContext(
 
     return Context.make(Persistence.ConnectionTargetStore, targetStore).pipe(
       Context.add(PullRequestRoutingPermissions, pullRequestRoutingPermissions),
+      Context.add(EnvironmentTrustMarks, environmentTrustMarks),
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),
       Context.add(CredentialStore.ConnectionCredentialStore, credentialStore),

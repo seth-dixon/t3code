@@ -1,6 +1,6 @@
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { type ToolActivityIcon } from "@t3tools/contracts";
-import { publicImageUrl, toolActivityFaviconUrl } from "@t3tools/shared/favicon";
+import { inlineImageUrl, toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { useEnvironmentTrusted } from "~/connection/environmentTrust";
 import { getProjectFaviconCacheKey } from "@t3tools/shared/projectFavicon";
 import { use, useState } from "react";
@@ -85,13 +85,13 @@ export function ToolActivityIconView(props: {
 }) {
   const { resolvedTheme, activeThreadEnvironmentId } = use(TimelineRowCtx);
   // An untrusted server could point these at this machine's loopback or LAN services.
-  const publicOnly = !useEnvironmentTrusted(activeThreadEnvironmentId);
+  const untrusted = !useEnvironmentTrusted(activeThreadEnvironmentId);
   const fallbackClassName = cn(props.className, props.muted && "opacity-70 light:brightness-60");
   if (!props.icon) {
     return <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />;
   }
   if (props.icon._tag === "website") {
-    const src = toolActivityFaviconUrl(props.icon, resolvedTheme, 32, publicOnly);
+    const src = toolActivityFaviconUrl(props.icon, resolvedTheme, 32, untrusted);
     return src ? (
       <ToolActivityImageIcon
         key={src}
@@ -110,7 +110,7 @@ export function ToolActivityIconView(props: {
       resolvedTheme === "dark"
         ? (props.icon.logoUrlDark ?? props.icon.logoUrl)
         : props.icon.logoUrl;
-    const src = publicOnly ? publicImageUrl(logoUrl) : logoUrl;
+    const src = untrusted ? inlineImageUrl(logoUrl) : logoUrl;
     if (src === null) {
       return <WorkEntryIcon name={props.fallbackName} className={fallbackClassName} />;
     }

@@ -70,7 +70,6 @@ function threadShowingBrowser(
     if (!session || session.promotedTo) return null;
     threadRef = scopeThreadRef(session.environmentId, session.threadId);
   }
-  // A link from this machine's browser may carry login tokens; an untrusted server never gets it.
   if (
     threadRef === null ||
     !isPreviewAvailableFor(threadRef.environmentId) ||
@@ -155,7 +154,7 @@ export function DesktopWebLinkCoordinator() {
 
   const startThread = async (url: string): Promise<ScopedThreadRef | null> => {
     const environmentId = scratchEnvironmentId(primaryEnvironment?.environmentId ?? null);
-    if (environmentId === null) {
+    if (environmentId === null || !readEnvironmentTrusted(environmentId)) {
       reportFailure(url);
       return null;
     }
@@ -185,6 +184,11 @@ export function DesktopWebLinkCoordinator() {
         isFile ? (primaryEnvironment?.environmentId ?? null) : null,
       ) ?? (await startThread(url));
     if (threadRef === null) return;
+    // A link from this machine's browser may carry login tokens; an untrusted server never gets it.
+    if (!readEnvironmentTrusted(threadRef.environmentId)) {
+      reportFailure(url);
+      return;
+    }
     const result = isFile
       ? httpBaseUrl === null
         ? null

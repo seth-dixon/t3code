@@ -28,12 +28,12 @@ describe("toolActivityFaviconUrl", () => {
     );
   });
 
-  it("loads only public or inline icons for an untrusted environment", () => {
+  it("never contacts a host an untrusted environment names", () => {
     const icon = (pageUrl: string, faviconUrl?: string) =>
       toolActivityFaviconUrl({ pageUrl, faviconUrl }, "light", 32, true);
     expect(icon("http://localhost:5173/app")).toBeNull();
-    expect(icon("https://example.com/docs", "http://192.168.1.1/x.png")).toBe(
-      "https://example.com/favicon.ico",
+    expect(icon("https://127.0.0.1.nip.io/docs", "https://127.0.0.1.nip.io/x.png")).toBe(
+      "https://www.google.com/s2/favicons?domain=127.0.0.1.nip.io&sz=32",
     );
     expect(icon("http://10.0.0.2/", "data:image/png;base64,AA==")).toBe(
       "data:image/png;base64,AA==",

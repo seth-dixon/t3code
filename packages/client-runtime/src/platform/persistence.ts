@@ -28,12 +28,10 @@ export class ConnectionPersistenceError extends Schema.TaggedError<ConnectionPer
     operation: Schema.Literals([
       "list-targets",
       "list-disabled-targets",
-      "list-untrusted-targets",
       "register-connection",
       "set-connection-routes",
       "remove-connection",
       "set-connection-enabled",
-      "set-connection-trusted",
       "load-shell",
       "save-shell",
       "load-thread",
@@ -56,7 +54,6 @@ export class ConnectionTargetStore extends Context.Service<
   {
     readonly list: Effect.Effect<ReadonlyArray<ConnectionTarget>, ConnectionPersistenceError>;
     readonly listDisabled: Effect.Effect<ReadonlyArray<EnvironmentId>, ConnectionPersistenceError>;
-    readonly listUntrusted: Effect.Effect<ReadonlyArray<EnvironmentId>, ConnectionPersistenceError>;
   }
 >()("@t3tools/client-runtime/platform/persistence/ConnectionTargetStore") {}
 
@@ -69,7 +66,6 @@ export class ConnectionRegistrationStore extends Context.Service<
     readonly register: (
       registration: ConnectionRegistration,
       routes: ReadonlyArray<PersistedConnectionTarget>,
-      options?: { readonly untrusted?: boolean },
     ) => Effect.Effect<void, ConnectionPersistenceError>;
     /**
      * `routes` must not be empty.
@@ -84,10 +80,6 @@ export class ConnectionRegistrationStore extends Context.Service<
     readonly setEnabled: (
       environmentId: EnvironmentId,
       enabled: boolean,
-    ) => Effect.Effect<void, ConnectionPersistenceError>;
-    readonly setTrusted: (
-      environmentId: EnvironmentId,
-      trusted: boolean,
     ) => Effect.Effect<void, ConnectionPersistenceError>;
   }
 >()("@t3tools/client-runtime/platform/persistence/ConnectionRegistrationStore") {}

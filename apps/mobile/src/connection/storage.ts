@@ -3,7 +3,6 @@ import {
   registerConnectionInCatalog,
   removeConnectionFromCatalog,
   setConnectionEnabledInCatalog,
-  setConnectionTrustedInCatalog,
   setRoutesInCatalog,
   removeCatalogValue,
   replaceCatalogValue,
@@ -28,12 +27,10 @@ function targetPersistenceError(
   operation:
     | "list-targets"
     | "list-disabled-targets"
-    | "list-untrusted-targets"
     | "register-connection"
     | "set-connection-routes"
     | "remove-connection"
-    | "set-connection-enabled"
-    | "set-connection-trusted",
+    | "set-connection-enabled",
   error: ConnectionTransientError,
 ) {
   return new Persistence.ConnectionPersistenceError({
@@ -60,23 +57,12 @@ export const layer = Layer.effectContext(
         Effect.map((document) => document.disabledEnvironmentIds),
         Effect.mapError((error) => targetPersistenceError("list-disabled-targets", error)),
       ),
-      listUntrusted: catalog.read.pipe(
-        Effect.map((document) => document.untrustedEnvironmentIds),
-        Effect.mapError((error) => targetPersistenceError("list-untrusted-targets", error)),
-      ),
     });
     const registrationStore = Persistence.ConnectionRegistrationStore.of({
       register: Effect.fn("Persistence.ConnectionRegistrationStore.register")(
-        (registration, routes, options) =>
+        (registration, routes) =>
           catalog
-            .update((document) =>
-              registerConnectionInCatalog(
-                document,
-                registration,
-                routes,
-                options?.untrusted === true,
-              ),
-            )
+            .update((document) => registerConnectionInCatalog(document, registration, routes))
             .pipe(Effect.mapError((error) => targetPersistenceError("register-connection", error))),
       ),
       setRoutes: Effect.fn("Persistence.ConnectionRegistrationStore.setRoutes")(
@@ -98,14 +84,6 @@ export const layer = Layer.effectContext(
             .update((document) => setConnectionEnabledInCatalog(document, environmentId, enabled))
             .pipe(
               Effect.mapError((error) => targetPersistenceError("set-connection-enabled", error)),
-            ),
-      ),
-      setTrusted: Effect.fn("Persistence.ConnectionRegistrationStore.setTrusted")(
-        (environmentId, trusted) =>
-          catalog
-            .update((document) => setConnectionTrustedInCatalog(document, environmentId, trusted))
-            .pipe(
-              Effect.mapError((error) => targetPersistenceError("set-connection-trusted", error)),
             ),
       ),
     });

@@ -42,6 +42,7 @@ import {
   PullRequestRoutingPermissions,
   pullRequestRoutingConnectionKey,
 } from "./pullRequestRoutingPermissions.ts";
+import { EnvironmentTrustMarks } from "./environmentTrustMarks.ts";
 import {
   RELAY_ROUTE_ID,
   connectionRouteId,
@@ -239,8 +240,14 @@ export const make = Effect.gen(function* () {
   const ssh = yield* ClientCapabilities.SshEnvironmentGateway;
   const persistedTargets = yield* storage.list;
   const disabledEnvironmentIds = new Set(yield* storage.listDisabled);
+  const trustMarks = yield* EnvironmentTrustMarks;
   const untrustedEnvironmentIds = yield* SubscriptionRef.make<ReadonlySet<EnvironmentId>>(
-    new Set(yield* storage.listUntrusted),
+    Option.getOrElse(yield* Stream.runHead(trustMarks.changes), () => new Set<EnvironmentId>()),
+  );
+  // Another window can mark or clear an environment at any time; follow it.
+  yield* trustMarks.changes.pipe(
+    Stream.runForEach((ids) => SubscriptionRef.set(untrustedEnvironmentIds, ids)),
+    Effect.forkIn(registryScope),
   );
   const loadRoute = Effect.fn("EnvironmentRegistry.loadRoute")(function* (
     target: ConnectionTarget,
@@ -578,14 +585,19 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  const markUntrustedLocked = Effect.fn("EnvironmentRegistry.markUntrustedLocked")(function* (
+  const setTrustedLocked = Effect.fn("EnvironmentRegistry.setTrustedLocked")(function* (
     environmentId: EnvironmentId,
+    trusted: boolean,
   ) {
-    yield* registrations.setTrusted(environmentId, false);
-    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) =>
-      current.has(environmentId) ? current : new Set(current).add(environmentId),
-    );
-    yield* pullRequestRoutingPermissions.forget(environmentId);
+    yield* trustMarks.set(environmentId, trusted);
+    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
+      if (current.has(environmentId) !== trusted) return current;
+      const next = new Set(current);
+      if (trusted) next.delete(environmentId);
+      else next.add(environmentId);
+      return next;
+    });
+    if (!trusted) yield* pullRequestRoutingPermissions.forget(environmentId);
   });
 
   const register = Effect.fn("EnvironmentRegistry.register")(function* (
@@ -620,29 +632,22 @@ export const make = Effect.gen(function* () {
           }
           entry = next.entry;
         }
-        const untrusted = options?.untrusted === true;
-        yield* registrations.register(
-          registration,
-          persistedRoutes(entry),
-          untrusted ? { untrusted } : undefined,
-        );
-        yield* Ref.update(persistedEnvironmentIds, (current) =>
-          new Set(current).add(environmentId),
-        );
-        if (untrusted) {
-          yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) =>
-            new Set(current).add(environmentId),
-          );
-          yield* pullRequestRoutingPermissions.forget(environmentId).pipe(
+        // Marked before it is saved: if saving fails the stray mark only keeps it untrusted.
+        if (options?.untrusted === true) {
+          yield* setTrustedLocked(environmentId, false).pipe(
             Effect.mapError(
               (error) =>
                 new Persistence.ConnectionPersistenceError({
-                  operation: "set-connection-trusted",
+                  operation: "register-connection",
                   message: error.message,
                 }),
             ),
           );
         }
+        yield* registrations.register(registration, persistedRoutes(entry));
+        yield* Ref.update(persistedEnvironmentIds, (current) =>
+          new Set(current).add(environmentId),
+        );
         yield* installEntryLocked(entry);
         return true;
       }),
@@ -712,12 +717,16 @@ export const make = Effect.gen(function* () {
             return next;
           });
           // This client's own backend is the trust anchor; a mark from its saved past no longer applies.
-          yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
-            if (!current.has(target.environmentId)) return current;
-            const next = new Set(current);
-            next.delete(target.environmentId);
-            return next;
-          });
+          if ((yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(target.environmentId)) {
+            yield* setTrustedLocked(target.environmentId, true).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Could not clear the untrusted mark of a platform environment.", {
+                  environmentId: target.environmentId,
+                  error,
+                }),
+              ),
+            );
+          }
 
           // Secondary desktop-local backends (e.g. a parallel WSL backend) live
           // on their own loopback origin, so they authenticate with a bearer
@@ -929,12 +938,17 @@ export const make = Effect.gen(function* () {
       next.delete(environmentId);
       return next;
     });
-    yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
-      if (!current.has(environmentId)) return current;
-      const next = new Set(current);
-      next.delete(environmentId);
-      return next;
-    });
+    if ((yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(environmentId)) {
+      // A mark left behind fails closed: the same environment added again starts untrusted.
+      yield* setTrustedLocked(environmentId, true).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("Could not clear the untrusted mark after removal.", {
+            environmentId,
+            error,
+          }),
+        ),
+      );
+    }
     yield* Effect.all(
       [
         cache.clear(environmentId).pipe(
@@ -1121,17 +1135,7 @@ export const make = Effect.gen(function* () {
           return yield* new PlatformEnvironmentRemovalError({ environmentId });
         }
         yield* getEntry(environmentId);
-        if (!trusted) {
-          yield* markUntrustedLocked(environmentId);
-          return;
-        }
-        if (!(yield* SubscriptionRef.get(untrustedEnvironmentIds)).has(environmentId)) return;
-        yield* registrations.setTrusted(environmentId, true);
-        yield* SubscriptionRef.update(untrustedEnvironmentIds, (current) => {
-          const next = new Set(current);
-          next.delete(environmentId);
-          return next;
-        });
+        yield* setTrustedLocked(environmentId, trusted);
       }),
     );
   });
