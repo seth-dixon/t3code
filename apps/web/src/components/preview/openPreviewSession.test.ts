@@ -7,6 +7,8 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import * as environmentTrust from "~/connection/environmentTrust";
+
 import * as browserDefaults from "~/browser/browserDefaults";
 import {
   BrowserSettingsReadError,
@@ -48,6 +50,8 @@ const snapshot: PreviewSessionSnapshot = {
 };
 
 beforeEach(() => {
+  // These threads stand for the trusted primary; an unsaved environment counts as untrusted.
+  vi.spyOn(environmentTrust, "readEnvironmentTrusted").mockReturnValue(true);
   resetPreviewStateForTests();
   useRightPanelStore.setState({ byThreadKey: {}, threadPanelVisibilityByThreadKey: {} });
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);

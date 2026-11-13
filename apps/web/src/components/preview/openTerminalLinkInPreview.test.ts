@@ -3,6 +3,8 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import * as environmentTrust from "~/connection/environmentTrust";
+
 import { openTerminalLinkInPreview } from "./openTerminalLinkInPreview";
 
 vi.mock("~/previewStateStore", () => ({
@@ -44,6 +46,8 @@ const threadRef = {
 };
 
 beforeEach(() => {
+  // These threads stand for the trusted primary; an unsaved environment counts as untrusted.
+  vi.spyOn(environmentTrust, "readEnvironmentTrusted").mockReturnValue(true);
   browserDefaultsMocks.resolve.mockReset();
   browserDefaultsMocks.resolve.mockResolvedValue(hydratedDefaults);
   linkTargetMocks.preference.mockReturnValue("app");
