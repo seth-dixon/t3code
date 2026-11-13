@@ -156,7 +156,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
-import { readEnvironmentTrusted } from "../connection/environmentTrust";
+import { readEnvironmentTrusted, useEnvironmentTrusted } from "../connection/environmentTrust";
 import { useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
@@ -1158,6 +1158,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
+    const environmentTrusted = useEnvironmentTrusted(environmentId);
+    // An editor link (vscode://file/...) opens a path on this machine, so an untrusted one stays text.
+    if (href && !environmentTrusted && isLocalEditorFileHref(href)) {
+      return <span>{children}</span>;
+    }
     const citation = href ? parseAssistantCitationHref(href) : null;
     const before = node?.position?.start.offset;
     const after = node?.position?.end.offset;
