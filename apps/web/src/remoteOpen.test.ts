@@ -32,7 +32,6 @@ describe("resolveRemoteOpenState", () => {
         sshTarget: null,
         isDesktopRenderer: false,
         trusted: true,
-        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
         hostEnvironmentId: null,
       }),
@@ -82,7 +81,6 @@ describe("resolveRemoteOpenState", () => {
         sshTarget: null,
         isDesktopRenderer: false,
         trusted: true,
-        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
         hostEnvironmentId: null,
       }),
@@ -100,7 +98,6 @@ describe("resolveRemoteOpenState", () => {
         sshTarget: null,
         isDesktopRenderer: true,
         trusted: true,
-        hostEnvironmentId: null,
         remoteOpenTargets: TAILSCALE_TARGETS,
         hostEnvironmentId: null,
       }),
@@ -116,6 +113,7 @@ describe("resolveRemoteOpenState", () => {
         sshTarget: null,
         isDesktopRenderer: true,
         remoteOpenTargets: TAILSCALE_TARGETS,
+        trusted: true,
         hostEnvironmentId: environmentId,
       }),
     ).toEqual({ mode: "local-exec" });
@@ -128,6 +126,7 @@ describe("resolveRemoteOpenState", () => {
         sshTarget: null,
         isDesktopRenderer: true,
         remoteOpenTargets: TAILSCALE_TARGETS,
+        trusted: true,
         hostEnvironmentId: EnvironmentId.make("environment-host"),
       }),
     ).toEqual({
@@ -142,7 +141,6 @@ describe("resolveRemoteOpenState", () => {
       sshTarget: { alias: "sol", username: null },
       isDesktopRenderer: true,
       trusted: true,
-      hostEnvironmentId: null,
       remoteOpenTargets: [
         { kind: "tailscale", host: "sol.tail1234.ts.net", username: "server-user" },
       ],
@@ -175,7 +173,6 @@ describe("resolveRemoteOpenState", () => {
       sshTarget,
       isDesktopRenderer: true,
       trusted: true,
-      hostEnvironmentId: null,
       remoteOpenTargets: TAILSCALE_TARGETS,
       hostEnvironmentId: null,
     });
@@ -200,7 +197,6 @@ describe("resolveRemoteOpenState", () => {
       sshTarget: null,
       isDesktopRenderer: false,
       trusted: true,
-      hostEnvironmentId: null,
       remoteOpenTargets: [
         { kind: "tailscale", host: "server.tail1234.ts.net", username: "admin-user" },
       ],
@@ -221,7 +217,6 @@ describe("resolveRemoteOpenState", () => {
           sshTarget: null,
           isDesktopRenderer: false,
           trusted: true,
-          hostEnvironmentId: null,
           remoteOpenTargets,
           hostEnvironmentId: null,
         }),

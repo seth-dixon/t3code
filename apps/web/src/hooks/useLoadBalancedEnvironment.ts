@@ -63,19 +63,23 @@ export function useLoadBalancedEnvironment(
   };
   const refreshSelection = async (ids: readonly EnvironmentId[]) => {
     const candidates = await Promise.all(
-      ids.map(async (environmentId) => {
-        const result = await executeAtomQuery(
-          registry,
-          serverEnvironment.hostResources({ environmentId, input: {} }),
-          { refresh: true, reportFailure: false, signal: AbortSignal.timeout(5_000) },
-        );
-        return {
-          environmentId,
-          resources: result._tag === "Success" ? result.value : null,
-          receivedAt: Date.now(),
-          weight: weights[environmentId] ?? 50,
-        };
-      }),
+      ids
+        .filter((environmentId) =>
+          isEnvironmentTrustedIn(trust, catalog, primaryEnvironmentId, environmentId),
+        )
+        .map(async (environmentId) => {
+          const result = await executeAtomQuery(
+            registry,
+            serverEnvironment.hostResources({ environmentId, input: {} }),
+            { refresh: true, reportFailure: false, signal: AbortSignal.timeout(5_000) },
+          );
+          return {
+            environmentId,
+            resources: result._tag === "Success" ? result.value : null,
+            receivedAt: Date.now(),
+            weight: weights[environmentId] ?? 50,
+          };
+        }),
     );
     return chooseLoadBalancedEnvironment(candidates, Date.now()) as EnvironmentId | null;
   };

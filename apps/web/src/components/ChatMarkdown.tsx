@@ -870,6 +870,9 @@ function useChatMarkdownState({
       environmentId !== null &&
       isAppBundle &&
       isClientHost &&
+      // The open runs on the environment's own server; an untrusted one resolves to remote-unavailable.
+      remoteOpen.isResolved &&
+      remoteOpen.state.mode === "local-exec" &&
       canOperateHost &&
       availableEditors.includes("file-manager");
     const mediaPath = mediaSource ?? fileLinkMeta.filePath;

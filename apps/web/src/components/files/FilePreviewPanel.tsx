@@ -130,7 +130,6 @@ import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
 import { changeFileSaveSession, useFileSaveSession } from "./fileSaveSessions";
 import { revisionedQuery } from "~/state/revisionedQuery";
 import { useEnvironmentTrusted } from "~/connection/environmentTrust";
-import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { UntrustedContentNotice } from "../chat/UntrustedContentNotice";
 import {
   getOptimisticProjectFileQueryData,
